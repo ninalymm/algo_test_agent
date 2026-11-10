@@ -1,0 +1,7 @@
+[
+  {"name": "直播召回-1", "category": "recall", "app": "foxcontent", "owner": "algo"},
+  {"name": "直播召回-2", "category": "recall", "app": "foxcontent", "owner": "algo"},
+  {"name": "混排-1", "category": "merge", "app": "intelligence-merge", "owner": "algo"},
+  {"name": "排序-1", "category": "rank", "app": "intelligence-merge", "owner": "algo"},
+  {"name": "商详召回-1", "category": "recall", "app": "foxcontent", "owner": "algo"}
+]

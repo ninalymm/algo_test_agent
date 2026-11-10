@@ -1,0 +1,4 @@
+change_kind,categories,qps_levels,diff_threshold
+recall,recall,1200|1600,0.01
+rank,rank,1200,0.01
+merge,merge,1600,0.01
