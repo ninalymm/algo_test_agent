@@ -82,9 +82,9 @@ def execute(conn, plan: dict) -> dict:
         qps_levels=[1200, 1600],
         steps=[
             ("check_recording", []),
-            ("load_test", ["check_recording"]),
+            ("perf_test", ["check_recording"]),
             ("diff", ["check_recording"]),
-            ("judge", ["load_test", "diff"]),
+            ("judge", ["perf_test", "diff"]),
         ],
     )
     with Tracer("execute", conn) as t:

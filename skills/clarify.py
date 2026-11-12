@@ -13,7 +13,7 @@ from skills import cards
 
 SCENE_RE = re.compile(r"\d{8}-\d{4}")
 TYPE_WORDS = {
-    "load": ("压测", "加压", "性能", "qps"),
+    "perf": ("压测", "加压", "性能", "qps"),
     "diff": ("diff", "比对", "一致性", "结果对比"),
 }
 
@@ -51,14 +51,14 @@ def match_scene(text: str, known: list[str]) -> str | None:
 
 def match_types(text: str) -> str | None:
     low = text.lower()
-    has_load = any(w in low for w in TYPE_WORDS["load"])
+    has_load = any(w in low for w in TYPE_WORDS["perf"])
     has_diff = any(w in low for w in TYPE_WORDS["diff"])
     if has_load and has_diff:
         return "both"
     if re.search(r"(都|两个|全部|全跑|一起|both)", text, re.I):
         return "both"
     if has_load:
-        return "load"
+        return "perf"
     if has_diff:
         return "diff"
     return None

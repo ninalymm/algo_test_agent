@@ -54,7 +54,7 @@ function renderCard(card, meta) {
     box.appendChild(el('div', 'change-title', `执行分支 · ${card.job || ''}`));
     Object.entries(card.branches).forEach(([k, v]) => {
       box.appendChild(el('div', 'change-meta ' + (v.ok ? 'ok' : 'bad'),
-        `${k === 'diff' ? 'diff' : '压测'}：${v.ok ? '成功' : v.label}`));
+        `${k === 'diff' ? 'diff' : '性能测试'}：${v.ok ? '成功' : v.label}`));
     });
     box.appendChild(el('div', 'change-meta',
       `job 状态：${card.job_status || '-'}｜结论：${card.validity || '-'}`));

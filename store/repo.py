@@ -196,7 +196,7 @@ def get_job(conn, job_id: str) -> dict | None:
 
 
 def job_status_from_branches(branches: dict) -> str:
-    """branches: {"diff": bool, "load": bool} —— True 表示该分支成功。"""
+    """branches: {"diff": bool, "perf": bool} —— True 表示该分支成功。"""
     ok = sum(1 for v in branches.values() if v)
     if ok == len(branches) and ok > 0:
         return "completed"

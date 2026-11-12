@@ -30,6 +30,10 @@ python3 -m evals.runner --self-check
 
 # 5. 测试
 python3 -m unittest discover -s tests
+
+# 可选：启用 LangGraph 版本（run 链路的多轮状态与 interrupt 确认）
+python3 -m venv venv && ./venv/bin/pip install -r requirements-langgraph.txt
+./venv/bin/python -m web.server      # 检测到 langgraph 就自动走图版本
 ```
 
 ## 架构

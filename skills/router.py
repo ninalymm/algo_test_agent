@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from skills import clarify, diagnose, run, scene_report, selftest
+from skills import clarify, diagnose, run, run_graph, scene_report, selftest
 from store import repo
 
 SCENE_RE = re.compile(r"\d{8}-\d{4}")
@@ -22,6 +22,17 @@ HELP = ("我可以做四件事：\n"
         "② 任务诊断：任务 T-005 有什么问题\n"
         "③ 跑任务：帮我跑一下 20260301-0001 的压测，1200 档\n"
         "④ 自测：我改完了 abc123f")
+
+
+def _strong_intent(text: str) -> str | None:
+    """明确表达了另一个意图（不是在对上一轮作答）。"""
+    if re.search(r"(改完了|自测|帮我验)", text):
+        return "selftest"
+    if TASK_RE.search(text) or re.search(r"(诊断|什么问题|什么情况)", text):
+        return "diagnose"
+    if SCENE_RE.search(text) and re.search(r"(最近|趋势|对比|分析|怎么样|报告)", text):
+        return "scene"
+    return None
 
 
 def detect(text: str) -> str:
@@ -70,8 +81,25 @@ def _continue_scene(conn, text: str, session: dict) -> dict:
     return scene_report.run(conn, scene)
 
 
-def route(conn, text: str, session: dict | None = None) -> dict:
+def route(conn, text: str, session: dict | None = None,
+          session_id: str | None = None) -> dict:
     session = session if session is not None else {}
+    tid = session_id or "default"
+
+    # LangGraph 版本可用时，run 链路交给图处理（状态在 checkpointer 里）
+    if run_graph.available():
+        waiting = run_graph.pending(conn, tid)
+        strong = _strong_intent(text)
+
+        # 用户改口：明确说了别的意图 → 放弃上一轮，走新意图
+        if waiting and strong:
+            run_graph.reset(conn, tid)
+            waiting = False
+
+        if waiting or (not session.get("pending") and detect(text) == "run"):
+            r = run_graph.handle(conn, text, tid)
+            r["intent"] = "run"
+            return r
 
     # 有未完成的多轮提问 → 按 pending 的意图续跑
     if session.get("pending"):

@@ -27,18 +27,18 @@ def parse(text: str) -> dict:
     qps = [int(x) for x in re.findall(r"(\d{3,4})\s*(?:qps|档)", text)] or DEFAULT_QPS
     types = clarify.match_types(text)
 
-    load = types in ("load", "both")
+    perf = types in ("perf", "both")
     diff = types in ("diff", "both")
     if types is None:
-        load = diff = True
+        perf = diff = True
 
-    return {"scene": scene, "qps": sorted(set(qps)), "load": load, "diff": diff,
+    return {"scene": scene, "qps": sorted(set(qps)), "perf": perf, "diff": diff,
             "types_explicit": types is not None}
 
 
 def _confirm(parsed: dict) -> dict:
     kinds = []
-    if parsed["load"]:
+    if parsed["perf"]:
         kinds.append("压测 " + ", ".join(f"{q}qps" for q in parsed["qps"]))
     if parsed["diff"]:
         kinds.append("diff 比对")
@@ -73,7 +73,7 @@ def run(conn, text: str, session: dict | None = None) -> dict:
             t = clarify.match_types(text)
             if t is None:
                 choice = clarify.resolve_choice(text, ["压测", "diff", "两个都跑"])
-                t = {"压测": "load", "diff": "diff", "两个都跑": "both"}.get(choice or "")
+                t = {"压测": "perf", "diff": "diff", "两个都跑": "both"}.get(choice or "")
             if t is None:
                 return {"reply": "没听懂。", "card": clarify.ask_types()}
             p.slots["types"] = t
@@ -104,24 +104,24 @@ def run(conn, text: str, session: dict | None = None) -> dict:
 def _from_slots(slots: dict) -> dict:
     t = slots.get("types", "both")
     return {"scene": slots.get("scene"), "qps": slots.get("qps") or DEFAULT_QPS,
-            "load": t in ("load", "both"), "diff": t in ("diff", "both"),
+            "perf": t in ("perf", "both"), "diff": t in ("diff", "both"),
             "types_explicit": True}
 
 
 def _normalize(parsed: dict) -> dict:
     out = {"scene": parsed.get("scene"), "qps": parsed.get("qps") or DEFAULT_QPS,
-           "load": True, "diff": True, "types_explicit": True}
+           "perf": True, "diff": True, "types_explicit": True}
     t = parsed.get("types")
-    if t == "load":
-        out["load"], out["diff"] = True, False
+    if t == "perf":
+        out["perf"], out["diff"] = True, False
     elif t == "diff":
-        out["load"], out["diff"] = False, True
+        out["perf"], out["diff"] = False, True
     return out
 
 
 def _plan_of(parsed: dict) -> dict:
     return {"scene": parsed.get("scene"), "qps": parsed.get("qps") or DEFAULT_QPS,
-            "load": parsed.get("load", True), "diff": parsed.get("diff", True)}
+            "perf": parsed.get("perf", True), "diff": parsed.get("diff", True)}
 
 
 def _scenes(conn) -> list[dict]:
@@ -140,7 +140,7 @@ def execute(conn, plan: dict) -> dict:
     scenes = plan.get("scenes") or ([scene] if scene else [])
     scene = scenes[0]
     qps = plan.get("qps") or DEFAULT_QPS
-    load, do_diff = plan.get("load", True), plan.get("diff", True)
+    perf, do_diff = plan.get("perf", True), plan.get("diff", True)
     sim = plan.get("simulate_fail")
     parent = plan.get("retry_of")
 
@@ -148,9 +148,9 @@ def execute(conn, plan: dict) -> dict:
     branches: dict[str, dict] = {}
 
     with Tracer("run", conn) as t:
-        if load:
-            branches["load"] = _branch(conn, t, job, scene, "load", sim, parent,
-                                       lambda: _run_load(scene, qps))
+        if perf:
+            branches["perf"] = _branch(conn, t, job, scene, "perf", sim, parent,
+                                       lambda: _run_perf(scene, qps))
         if do_diff:
             branches["diff"] = _branch(conn, t, job, scene, "diff", sim, parent,
                                        lambda: _run_diff(scene))
@@ -166,7 +166,7 @@ def execute(conn, plan: dict) -> dict:
     if status in ("completed", "partial"):
         task_id = f"T-{job.split('-', 1)[1]}"
         diff_rate = branches.get("diff", {}).get("diff_rate", 0.0)
-        p99 = branches.get("load", {}).get("p99", 0.0)
+        p99 = branches.get("perf", {}).get("p99", 0.0)
         repo.insert_task_report(conn, task_id, scene, _graph_of(conn, scene),
                                 diff_rate, p99, round(p99 / 1.9, 1) if p99 else 0,
                                 "pass" if status == "completed" else "partial")
@@ -176,8 +176,8 @@ def execute(conn, plan: dict) -> dict:
         b = branches["diff"]
         metrics.append({"name": "diff", "value": f"{b['diff_rate']:.2%}" if b["ok"] else "未产出",
                         "ok": b["ok"]})
-    if "load" in branches:
-        b = branches["load"]
+    if "perf" in branches:
+        b = branches["perf"]
         metrics.append({"name": "p99", "value": f"{b['p99']:.1f}ms" if b["ok"] else "未产出",
                         "ok": b["ok"]})
 
@@ -218,7 +218,7 @@ def _reply(status: str, validity: str) -> str:
 
 def _branch(conn, tracer, job, scene, name, sim, parent, fn) -> dict:
     att = repo.new_attempt(conn, scene, parent=parent, job_id=job, branch=name)
-    fail_sim = {"load": "load", "diff": "diff"}.get(sim)
+    fail_sim = {"perf": "perf", "diff": "diff"}.get(sim)
     try:
         with tracer.span(f"branch_{name}", branch=name, attempt=att):
             if sim == "sandbox" or fail_sim == name:
@@ -237,7 +237,7 @@ def _branch(conn, tracer, job, scene, name, sim, parent, fn) -> dict:
                 "diff_rate": 0.0, "p99": 0.0}
 
 
-def _run_load(scene: str, qps: list[int]) -> dict:
+def _run_perf(scene: str, qps: list[int]) -> dict:
     data = ForceBotMock().run({"scene": scene, "qps": max(qps)}).data
     return {"p99": data["p99"], "avg": data["avg"], "qps": data["qps"]}
 

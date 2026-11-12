@@ -81,58 +81,58 @@ class TestRunSkill(unittest.TestCase):
 
     def test_parse_load_only(self):
         p = run.parse("帮我跑一下 20260301-0001 的压测，1200 档")
-        self.assertTrue(p["load"])
+        self.assertTrue(p["perf"])
         self.assertFalse(p["diff"])
         self.assertEqual(p["qps"], [1200])
 
     def test_parse_diff_only(self):
         p = run.parse("跑个 diff 看看 20260301-0001")
-        self.assertFalse(p["load"])
+        self.assertFalse(p["perf"])
         self.assertTrue(p["diff"])
 
     def test_parse_default_both(self):
         p = run.parse("20260301-0001 跑一下")
-        self.assertTrue(p["load"] and p["diff"])
+        self.assertTrue(p["perf"] and p["diff"])
 
     def test_execute_returns_verdict(self):
         r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
-                                    "load": True, "diff": True})
+                                    "perf": True, "diff": True})
         self.assertEqual(r["card"]["type"], "verdict")
         self.assertTrue(r["job"].startswith("J-"))
         self.assertEqual(r["card"]["job_status"], "completed")
-        self.assertEqual(set(r["card"]["branches"]), {"diff", "load"})
+        self.assertEqual(set(r["card"]["branches"]), {"diff", "perf"})
 
     def test_all_branches_failed_keeps_no_task(self):
         r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
-                                    "load": True, "diff": True, "simulate_fail": "sandbox"})
+                                    "perf": True, "diff": True, "simulate_fail": "sandbox"})
         self.assertEqual(r["card"]["job_status"], "failed")
         self.assertIsNone(r["task_id"])          # 全失败不写历史
         self.assertIn("已保留", r["reply"])
 
     def test_partial_diff_failed_load_ok(self):
         r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
-                                    "load": True, "diff": True, "simulate_fail": "diff"})
+                                    "perf": True, "diff": True, "simulate_fail": "diff"})
         self.assertEqual(r["card"]["job_status"], "partial")
         self.assertIsNotNone(r["task_id"])       # 有产出就写历史
-        self.assertTrue(r["card"]["branches"]["load"]["ok"])
+        self.assertTrue(r["card"]["branches"]["perf"]["ok"])
         self.assertFalse(r["card"]["branches"]["diff"]["ok"])
 
     def test_partial_load_failed_diff_ok(self):
         r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
-                                    "load": True, "diff": True, "simulate_fail": "load"})
+                                    "perf": True, "diff": True, "simulate_fail": "perf"})
         self.assertEqual(r["card"]["job_status"], "partial")
-        self.assertFalse(r["card"]["branches"]["load"]["ok"])
+        self.assertFalse(r["card"]["branches"]["perf"]["ok"])
         self.assertTrue(r["card"]["branches"]["diff"]["ok"])
 
     def test_invalid_when_aa_low(self):
         r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
-                                    "load": True, "diff": True, "aa_emr": 0.85})
+                                    "perf": True, "diff": True, "aa_emr": 0.85})
         self.assertEqual(r["card"]["validity"], "invalid")
         self.assertIn("结论无效", r["card"]["note"])
 
     def test_valid_when_aa_ok(self):
         r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
-                                    "load": True, "diff": True, "aa_emr": 0.97})
+                                    "perf": True, "diff": True, "aa_emr": 0.97})
         self.assertEqual(r["card"]["validity"], "valid")
 
 
@@ -154,7 +154,7 @@ class TestClarify(unittest.TestCase):
 
         r3 = run.run(self.conn, "只跑压测", sess)
         self.assertEqual(r3["card"]["type"], "confirm")
-        self.assertTrue(r3["plan"]["load"])
+        self.assertTrue(r3["plan"]["perf"])
         self.assertFalse(r3["plan"]["diff"])
         self.assertNotIn("pending", sess)
 
@@ -212,18 +212,18 @@ class TestFailureTaxonomy(unittest.TestCase):
 
     def test_branch_failure_is_classified(self):
         r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
-                                    "load": True, "diff": True, "simulate_fail": "diff"})
+                                    "perf": True, "diff": True, "simulate_fail": "diff"})
         self.assertIn("执行 · 执行报错", r["card"]["branches"]["diff"]["label"])
 
     def test_sandbox_failure_hits_both_branches(self):
         r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
-                                    "load": True, "diff": True, "simulate_fail": "sandbox"})
+                                    "perf": True, "diff": True, "simulate_fail": "sandbox"})
         self.assertIn("环境准备", r["card"]["branches"]["diff"]["label"])
         self.assertEqual(r["card"]["job_status"], "failed")
 
     def test_summary_groups_by_type(self):
         run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
-                                "load": True, "diff": True, "simulate_fail": "sandbox"})
+                                "perf": True, "diff": True, "simulate_fail": "sandbox"})
         s = repo.attempt_summary(self.conn, "20260301-0001")
         self.assertIn("sandbox_unavailable", s["by_type"])
         self.assertGreaterEqual(s["by_stage"]["sandbox"], 1)
@@ -234,6 +234,15 @@ class TestRouterV2(unittest.TestCase):
     def setUpClass(cls):
         seed()
         cls.conn = connect()
+
+    def setUp(self):
+        # 图版本的会话状态存在 checkpointer 里，测试间要互相隔离
+        from skills import run_graph
+        if run_graph.available():
+            run_graph.reset(self.conn, "default")
+            run_graph.reset(self.conn, "g-test-1")
+            run_graph.reset(self.conn, "g-test-2")
+            run_graph.reset(self.conn, "g-test-3")
 
     def test_four_intents(self):
         self.assertEqual(router.route(self.conn, "场景 20260301-0001 最近 5 次怎么样")["intent"], "scene")

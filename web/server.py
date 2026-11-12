@@ -27,6 +27,19 @@ CONN = None
 SESSIONS: dict = {}
 
 
+class Server(ThreadingHTTPServer):
+    """跳过 HTTPServer.server_bind 里的 getfqdn 反查。
+
+    默认实现会在绑定端口时做一次反向 DNS，网络不通时会卡住几十秒。
+    """
+
+    def server_bind(self):
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # 静默
@@ -83,7 +96,8 @@ class Handler(BaseHTTPRequestHandler):
             if not msg:
                 return self._json({"reply": "说点什么吧。", "card": None})
             try:
-                result = router.route(CONN, msg, self._session(payload))
+                result = router.route(CONN, msg, self._session(payload),
+                                      payload.get('session_id') or 'default')
             except Exception as e:  # 不让异常打断会话
                 return self._json({"reply": f"处理出错：{e}", "card": None, "intent": "error"})
             return self._json(result)
@@ -115,7 +129,7 @@ def main():
         seed()
         CONN = connect()
 
-    srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    srv = Server(("127.0.0.1", args.port), Handler)
     print(f"chat ui  →  http://127.0.0.1:{args.port}")
     try:
         srv.serve_forever()

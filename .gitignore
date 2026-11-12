@@ -8,3 +8,4 @@ venv/
 .idea/
 report/
 data/agent.db
+data/graph.db

@@ -46,9 +46,9 @@ def build_plan(change: Change) -> Plan:
         diff_threshold=float(rule["diff_threshold"]),
         steps=[
             ("check_recording", []),
-            ("load_test", ["check_recording"]),
+            ("perf_test", ["check_recording"]),
             ("diff", ["check_recording"]),
-            ("judge", ["load_test", "diff"]),
+            ("judge", ["perf_test", "diff"]),
         ],
         notes=[f"命中规则：{change.kind}"],
     )

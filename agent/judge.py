@@ -26,8 +26,8 @@ def judge(plan: Plan, state: dict) -> Verdict:
         suggestions.append("排查度量/口径是否对齐，先看分数是否可比")
 
     # 3. 性能劣化
-    load = state.get("load_test", {})
-    for scene, by_qps in load.items():
+    perf = state.get("perf_test", {})
+    for scene, by_qps in perf.items():
         for qps, d in by_qps.items():
             limit = plan.p99_baseline * (1 + plan.p99_tolerance)
             if d.get("p99", 0) > limit:
@@ -38,7 +38,7 @@ def judge(plan: Plan, state: dict) -> Verdict:
         passed=not reasons,
         reasons=reasons,
         suggestions=suggestions,
-        evidence={"diff": diffs, "load": load, "recording": recording},
+        evidence={"diff": diffs, "perf": perf, "recording": recording},
     )
 
 
@@ -47,7 +47,7 @@ def to_card(verdict: Verdict) -> str:
     lines = [icon, "-" * 40]
     for s, d in verdict.evidence.get("diff", {}).items():
         lines.append(f"diff {s:<16} {d['diff_rate']:.2%}")
-    for scene, by_qps in verdict.evidence.get("load", {}).items():
+    for scene, by_qps in verdict.evidence.get("perf", {}).items():
         for qps, d in by_qps.items():
             lines.append(f"p99  {scene}@{qps:<6} {d['p99']}ms")
     lines.append("-" * 40)

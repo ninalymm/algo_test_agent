@@ -38,7 +38,7 @@ class Executor:
             results[scene] = r.data
         return results
 
-    def _step_load_test(self, plan: Plan) -> dict:
+    def _step_perf_test(self, plan: Plan) -> dict:
         out = {}
         for scene in plan.scenes:
             out[scene] = {qps: self.forcebot.run({"scene": scene, "qps": qps}).data

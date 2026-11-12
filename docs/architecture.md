@@ -21,6 +21,9 @@
 └──────────────────────────────────────────────────────┘
 ```
 
+**可选路径**：`run` 链路有手写版（`skills/run.py`）和 LangGraph 版（`skills/run_graph.py`），
+装没装 langgraph 自动切换，执行逻辑（`run.execute`）只有一份。见 D12。
+
 **依赖方向**：`skills → context → store`，`agent → tools`。
 **硬约束**：Skill 不允许直接查库，必须走 `context/assembler`——否则三个 Skill 会各写一套聚合逻辑，口径必然分叉。
 
