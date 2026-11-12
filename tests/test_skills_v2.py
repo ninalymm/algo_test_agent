@@ -123,6 +123,31 @@ class TestClarify(unittest.TestCase):
         self.assertEqual(r["card"]["type"], "confirm")
         self.assertEqual(r["plan"]["qps"], [1200])
 
+    def test_diagnose_asks_then_answers(self):
+        sess = {}
+        r1 = router.route(self.conn, "诊断一下", sess)
+        self.assertEqual(r1["card"]["type"], "ask")
+        self.assertEqual(r1["card"]["slot"], "task")
+        r2 = router.route(self.conn, "T-005", sess)
+        self.assertEqual(r2["card"]["type"], "verdict")
+        self.assertNotIn("pending", sess)
+
+    def test_scene_asks_then_answers(self):
+        sess = {}
+        r1 = router.route(self.conn, "对比一下", sess)
+        self.assertEqual(r1["card"]["type"], "ask")
+        self.assertEqual(r1["card"]["slot"], "scene")
+        r2 = router.route(self.conn, "20260301-0001", sess)
+        self.assertEqual(r2["card"]["type"], "trend")
+        self.assertNotIn("pending", sess)
+
+    def test_cancel_clears_pending_for_diagnose(self):
+        sess = {}
+        router.route(self.conn, "诊断一下", sess)
+        r = router.route(self.conn, "算了", sess)
+        self.assertIsNone(r["card"])
+        self.assertNotIn("pending", sess)
+
     def test_cancel_clears_pending(self):
         sess = {}
         run.run(self.conn, "跑一下", sess)

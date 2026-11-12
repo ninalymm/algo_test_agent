@@ -64,16 +64,36 @@ def match_types(text: str) -> str | None:
     return None
 
 
+def match_task(text: str, known: list[str]) -> str | None:
+    """认任务 id：T-005 / 005 / 序号。"""
+    m = re.search(r"T-(\d{3,})", text, re.I)
+    if m:
+        tid = f"T-{m.group(1)}"
+        return tid if tid in known else (tid if not known else None)
+    bare = re.fullmatch(r"\s*(\d{3,})\s*", text)
+    if bare:
+        tid = f"T-{bare.group(1)}"
+        return tid if tid in known else None
+    return None
+
+
 def is_cancel(text: str) -> bool:
     return bool(re.search(r"(取消|算了|不跑了|cancel)", text, re.I))
 
 
 # ---------- 提问 ----------
 
-def ask_scene(known: list[str]) -> dict:
-    body = cards.ask_card("跑哪个场景？", [f"{s}" for s in known[:5]],
+def ask_scene(known: list[str], title: str = "跑哪个场景？") -> dict:
+    body = cards.ask_card(title, [f"{s}" for s in known[:5]],
                           hint="直接回场景 id，或回序号")
     body["slot"] = "scene"
+    return body
+
+
+def ask_task(known: list[str]) -> dict:
+    body = cards.ask_card("诊断哪个任务？", [f"{t}" for t in known[:5]],
+                          hint="回任务 id，或回序号")
+    body["slot"] = "task"
     return body
 
 

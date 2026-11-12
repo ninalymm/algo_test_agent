@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import re
 
-from skills import diagnose, run, scene_report, selftest
+from skills import clarify, diagnose, run, scene_report, selftest
+from store import repo
 
 SCENE_RE = re.compile(r"\d{8}-\d{4}")
 TASK_RE = re.compile(r"T-\d{3,}", re.I)
@@ -39,18 +40,56 @@ def detect(text: str) -> str:
     if TASK_RE.search(t):
         return "diagnose"
 
+    if re.search(r"(诊断|什么问题|什么情况|分析一下)", t):
+        return "diagnose"
+
     if scene:
         return "scene"
+
+    if re.search(r"(场景|趋势|最近|对比|报告)", t):
+        return "scene"
+
     return "unknown"
+
+
+def _continue_diagnose(conn, text: str, session: dict) -> dict:
+    known = [t["id"] for t in repo.list_tasks(conn, 20)]
+    task_id = clarify.match_task(text, known) or clarify.resolve_choice(text, known[:5])
+    if not task_id:
+        return {"reply": "没认出任务 id。", "card": clarify.ask_task(known[:5])}
+    session.pop("pending", None)
+    return diagnose.run(conn, task_id)
+
+
+def _continue_scene(conn, text: str, session: dict) -> dict:
+    known = [s["id"] for s in repo._rows(conn.execute("SELECT id FROM scene ORDER BY id"))]
+    scene = clarify.match_scene(text, known) or clarify.resolve_choice(text, known)
+    if not scene:
+        return {"reply": "没认出场景 id。", "card": clarify.ask_scene(known, "对比哪个场景？")}
+    session.pop("pending", None)
+    return scene_report.run(conn, scene)
 
 
 def route(conn, text: str, session: dict | None = None) -> dict:
     session = session if session is not None else {}
 
-    # 有未完成的多轮提问 → 先当答案处理（只在 run 意图里用）
+    # 有未完成的多轮提问 → 按 pending 的意图续跑
     if session.get("pending"):
-        r = run.run(conn, text, session)
-        r["intent"] = session.get("pending", {}).get("intent", "run")
+        pending = session["pending"]
+        intent = pending.get("intent", "run")
+
+        if clarify.is_cancel(text):
+            session.pop("pending", None)
+            return {"reply": "已取消。", "card": None, "intent": intent}
+
+        if intent == "run":
+            r = run.run(conn, text, session)
+        elif intent == "diagnose":
+            r = _continue_diagnose(conn, text, session)
+        else:
+            r = _continue_scene(conn, text, session)
+
+        r["intent"] = intent
         return r
 
     intent = detect(text)
@@ -63,13 +102,23 @@ def route(conn, text: str, session: dict | None = None) -> dict:
         r = run.run(conn, text, session)
 
     elif intent == "scene":
-        scene = SCENE_RE.search(text).group(0)
-        n_match = re.search(r"(\d+)\s*次", text)
-        r = scene_report.run(conn, scene, int(n_match.group(1)) if n_match else 5)
+        m = SCENE_RE.search(text)
+        if not m:
+            known = [s["id"] for s in repo._rows(conn.execute("SELECT id FROM scene ORDER BY id"))]
+            session["pending"] = clarify.Pending("scene", "scene", {}).to_dict()
+            r = {"reply": "对比哪个场景？", "card": clarify.ask_scene(known, "对比哪个场景？")}
+        else:
+            n_match = re.search(r"(\d+)\s*次", text)
+            r = scene_report.run(conn, m.group(0), int(n_match.group(1)) if n_match else 5)
 
     elif intent == "diagnose":
-        task_id = TASK_RE.search(text).group(0).upper()
-        r = diagnose.run(conn, task_id)
+        m = TASK_RE.search(text)
+        if not m:
+            known = [t["id"] for t in repo.list_tasks(conn, 5)]
+            session["pending"] = clarify.Pending("diagnose", "task", {}).to_dict()
+            r = {"reply": "诊断哪个任务？", "card": clarify.ask_task(known)}
+        else:
+            r = diagnose.run(conn, m.group(0).upper())
 
     else:
         r = {"reply": HELP, "card": None}
