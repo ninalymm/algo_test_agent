@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from skills import diagnose, router, run, scene_report
+from store import repo
 from store.db import connect
 from store.seed import seed
 
@@ -55,6 +56,11 @@ class TestDiagnose(unittest.TestCase):
 
 
 class TestRunSkill(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        seed()
+        cls.conn = connect()
+
     def test_parse_load_only(self):
         p = run.parse("帮我跑一下 20260301-0001 的压测，1200 档")
         self.assertTrue(p["load"])
@@ -71,9 +77,58 @@ class TestRunSkill(unittest.TestCase):
         self.assertTrue(p["load"] and p["diff"])
 
     def test_execute_returns_verdict(self):
-        r = run.execute(None, {"scenes": ["20260301-0001"], "qps": [1200],
-                               "load": True, "diff": True})
+        r = run.execute(self.conn, {"scenes": ["20260301-0001"], "qps": [1200],
+                                    "load": True, "diff": True})
         self.assertEqual(r["card"]["type"], "verdict")
+        self.assertTrue(r["attempt"].startswith("A-"))
+
+    def test_failed_attempt_is_kept_not_overwritten(self):
+        before = repo.attempt_summary(self.conn, "20260301-0001")["total"]
+        r = run.execute(self.conn, {"scenes": ["20260301-0001"], "qps": [1200],
+                                    "load": True, "diff": True, "simulate_fail": True})
+        self.assertEqual(r["card"]["status"], "fail")
+        after = repo.attempt_summary(self.conn, "20260301-0001")
+        self.assertEqual(after["total"], before + 1)      # 轮次保留
+        self.assertGreaterEqual(after["aborted"], 1)      # 失败轮可追溯
+        # 失败轮不写 task，不污染历史
+        self.assertFalse(r.get("task_id"))
+        self.assertIn("已保留", r["reply"])
+
+
+class TestClarify(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        seed()
+        cls.conn = connect()
+
+    def test_multi_turn_fills_slots(self):
+        sess = {}
+        r1 = run.run(self.conn, "帮我跑一下", sess)
+        self.assertEqual(r1["card"]["type"], "ask")
+        self.assertEqual(r1["card"]["slot"], "scene")
+
+        r2 = run.run(self.conn, "20260301-0001", sess)
+        self.assertEqual(r2["card"]["type"], "ask")
+        self.assertEqual(r2["card"]["slot"], "types")
+
+        r3 = run.run(self.conn, "只跑压测", sess)
+        self.assertEqual(r3["card"]["type"], "confirm")
+        self.assertTrue(r3["plan"]["load"])
+        self.assertFalse(r3["plan"]["diff"])
+        self.assertNotIn("pending", sess)
+
+    def test_one_shot_skips_questions(self):
+        sess = {}
+        r = run.run(self.conn, "帮我跑一下 20260301-0001 的压测 1200 档", sess)
+        self.assertEqual(r["card"]["type"], "confirm")
+        self.assertEqual(r["plan"]["qps"], [1200])
+
+    def test_cancel_clears_pending(self):
+        sess = {}
+        run.run(self.conn, "跑一下", sess)
+        r = run.run(self.conn, "算了", sess)
+        self.assertIsNone(r["card"])
+        self.assertNotIn("pending", sess)
 
 
 class TestRouterV2(unittest.TestCase):

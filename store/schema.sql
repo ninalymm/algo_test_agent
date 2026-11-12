@@ -68,3 +68,15 @@ CREATE TABLE IF NOT EXISTS span (
   status   TEXT,
   attrs    TEXT
 );
+
+-- 执行轮次：失败/超时的数据不覆盖，用 attempt 链表达重试关系
+CREATE TABLE IF NOT EXISTS attempt (
+  id             TEXT PRIMARY KEY,
+  scene_id       TEXT,
+  task_id        TEXT,
+  round          INTEGER,
+  status         TEXT,      -- running / completed / failed / timeout / aborted
+  parent_attempt TEXT,      -- 重试指向上一轮
+  created_at     TEXT,
+  note           TEXT
+);

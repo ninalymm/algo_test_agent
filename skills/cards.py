@@ -21,3 +21,7 @@ def blocked_card(title: str, reasons: list[str]) -> dict:
 
 def trend_card(title: str, rows: list[dict], note: str) -> dict:
     return {"type": "trend", "title": title, "rows": rows, "note": note}
+
+
+def ask_card(title: str, options: list[str], hint: str = "") -> dict:
+    return {"type": "ask", "title": title, "options": options, "hint": hint}

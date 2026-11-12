@@ -44,7 +44,15 @@ def detect(text: str) -> str:
     return "unknown"
 
 
-def route(conn, text: str) -> dict:
+def route(conn, text: str, session: dict | None = None) -> dict:
+    session = session if session is not None else {}
+
+    # 有未完成的多轮提问 → 先当答案处理（只在 run 意图里用）
+    if session.get("pending"):
+        r = run.run(conn, text, session)
+        r["intent"] = session.get("pending", {}).get("intent", "run")
+        return r
+
     intent = detect(text)
 
     if intent == "selftest":
@@ -52,7 +60,7 @@ def route(conn, text: str) -> dict:
         r = selftest.run(conn, text, m.group(1) if m else None)
 
     elif intent == "run":
-        r = run.run(conn, text)
+        r = run.run(conn, text, session)
 
     elif intent == "scene":
         scene = SCENE_RE.search(text).group(0)

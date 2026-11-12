@@ -24,6 +24,7 @@ from store.seed import seed  # noqa: E402
 from store import repo  # noqa: E402
 
 CONN = None
+SESSIONS: dict = {}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -31,6 +32,10 @@ class Handler(BaseHTTPRequestHandler):
         pass  # 静默
 
     # ---------- helpers ----------
+    def _session(self, payload: dict) -> dict:
+        sid = payload.get("session_id") or "default"
+        return SESSIONS.setdefault(sid, {})
+
     def _json(self, obj, code=200):
         body = json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(code)
@@ -78,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
             if not msg:
                 return self._json({"reply": "说点什么吧。", "card": None})
             try:
-                result = router.route(CONN, msg)
+                result = router.route(CONN, msg, self._session(payload))
             except Exception as e:  # 不让异常打断会话
                 return self._json({"reply": f"处理出错：{e}", "card": None, "intent": "error"})
             return self._json(result)

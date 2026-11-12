@@ -114,3 +114,55 @@ def add_span(conn, trace_id: str, task_id: str | None, name: str,
 def spans_of_trace(conn, trace_id: str) -> list[dict]:
     return _rows(conn.execute(
         "SELECT * FROM span WHERE trace_id = ? ORDER BY start_ms", (trace_id,)))
+
+
+# ---------- attempt（执行轮次） ----------
+
+def next_round(conn, scene_id: str) -> int:
+    row = conn.execute("SELECT COALESCE(MAX(round), 0) FROM attempt WHERE scene_id = ?",
+                       (scene_id,)).fetchone()
+    return int(row[0]) + 1
+
+
+def new_attempt(conn, scene_id: str, parent: str | None = None) -> str:
+    import datetime
+    aid = f"A-{datetime.datetime.now().strftime('%m%d%H%M%S')}-{next_round(conn, scene_id)}"
+    conn.execute(
+        "INSERT INTO attempt(id, scene_id, task_id, round, status, parent_attempt, created_at, note) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (aid, scene_id, None, next_round(conn, scene_id), "running", parent,
+         datetime.datetime.now().isoformat(timespec="seconds"), ""))
+    conn.commit()
+    return aid
+
+
+def finish_attempt(conn, attempt_id: str, status: str, task_id: str | None = None,
+                   note: str = "") -> None:
+    conn.execute("UPDATE attempt SET status = ?, task_id = COALESCE(?, task_id), note = ? WHERE id = ?",
+                 (status, task_id, note, attempt_id))
+    conn.commit()
+
+
+def attempts_of_scene(conn, scene_id: str, limit: int = 20) -> list[dict]:
+    return _rows(conn.execute(
+        "SELECT * FROM attempt WHERE scene_id = ? ORDER BY created_at DESC LIMIT ?",
+        (scene_id, limit)))
+
+
+def attempt_summary(conn, scene_id: str) -> dict:
+    rows = attempts_of_scene(conn, scene_id, 100)
+    aborted = [r for r in rows if r["status"] in ("failed", "timeout", "aborted")]
+    return {"total": len(rows), "aborted": len(aborted),
+            "last": rows[0]["id"] if rows else None}
+
+
+def insert_task_report(conn, task_id: str, scene_id: str, graph_id: str,
+                       diff_rate: float, p99: float, avg: float,
+                       verdict: str, ts: str | None = None) -> None:
+    import datetime
+    ts = ts or datetime.datetime.now().isoformat(timespec="minutes")
+    conn.execute("INSERT OR REPLACE INTO task(id, scene_id, graph_id, change_id, trigger, status, ts) "
+                 "VALUES (?,?,?,?,?,?,?)", (task_id, scene_id, graph_id, None, "agent", "done", ts))
+    conn.execute("INSERT OR REPLACE INTO report(task_id, diff_rate, p99, avg, verdict, reasons) "
+                 "VALUES (?,?,?,?,?,?)", (task_id, diff_rate, p99, avg, verdict, "[]"))
+    conn.commit()
