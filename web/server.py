@@ -86,7 +86,10 @@ class Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(n) or b"{}")
             from skills import selftest
-            return self._json(selftest.execute(CONN, payload.get("plan") or {}))
+            try:
+                return self._json(selftest.execute(CONN, payload.get("plan") or {}))
+            except Exception as e:
+                return self._json({"reply": f"执行出错：{e}", "card": None}, 500)
         self.send_error(404)
 
 

@@ -77,17 +77,26 @@ def execute(conn, plan: dict) -> dict:
     from tools.diff_mock import DiffMock
     from tools.forcebot_mock import ForceBotMock
 
-    p = Plan(scenes=plan["scenes"], qps_levels=[1200, 1600])
+    p = Plan(
+        scenes=plan["scenes"],
+        qps_levels=[1200, 1600],
+        steps=[
+            ("check_recording", []),
+            ("load_test", ["check_recording"]),
+            ("diff", ["check_recording"]),
+            ("judge", ["load_test", "diff"]),
+        ],
+    )
     with Tracer("execute", conn) as t:
-        t.task_id = plan.get("task_hint")
         with t.span("check_recording", scenes=len(p.scenes)):
             ex = Executor(R2Mock(), ForceBotMock(), DiffMock())
             state = ex.run(p)
         with t.span("judge"):
             v = judge(p, state)
 
-    metrics = [{"name": "diff", "value": f"{max(d['diff_rate'] for d in state['diff'].values()):.2%}",
-                "ok": v.passed}]
+    diffs = v.evidence.get("diff", {})
+    worst = max((d.get("diff_rate", 0) for d in diffs.values()), default=0.0)
+    metrics = [{"name": "diff", "value": f"{worst:.2%}", "ok": worst <= p.diff_threshold}]
     return {"reply": "跑完了。", "card": cards.verdict_card("自测结果", "pass" if v.passed else "fail",
                                                            metrics, "；".join(v.reasons)),
             "trace_id": t.trace_id}
