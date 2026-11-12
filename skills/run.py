@@ -132,88 +132,119 @@ def _scenes(conn) -> list[dict]:
 # ---------- 执行 ----------
 
 def execute(conn, plan: dict) -> dict:
+    """一次执行请求 = 一个 job，内含 diff / 压测两个独立分支。
+
+    分支互不影响：diff 挂了，压测照样出结果（job 状态为 partial）。
+    """
     scene = plan.get("scene")
     scenes = plan.get("scenes") or ([scene] if scene else [])
+    scene = scenes[0]
     qps = plan.get("qps") or DEFAULT_QPS
     load, do_diff = plan.get("load", True), plan.get("diff", True)
-
-    parent = plan.get("retry_of")
-    attempt = repo.new_attempt(conn, scenes[0], parent=parent)
-    attempt_count = len(repo.attempts_of_scene(conn, scenes[0], 50))
-
-    steps = [("check_recording", [])]
-    if load:
-        steps.append(("load_test", ["check_recording"]))
-    if do_diff:
-        steps.append(("diff", ["check_recording"]))
-    steps.append(("judge", [s[0] for s in steps[1:]] or ["check_recording"]))
-
-    p = Plan(scenes=scenes, qps_levels=qps, steps=steps)
-
     sim = plan.get("simulate_fail")
-    simulated = {"sandbox": ("sandbox", "sandbox_unavailable", RuntimeError("沙箱启动失败")),
-                 "timeout": ("run", "run_timeout", TimeoutError("执行超时 1800s")),
-                 "report": ("report", "report_failed", IOError("报告落库失败")),
-                 "judge": ("judge", "judge_error", RuntimeError("判读异常"))}
+    parent = plan.get("retry_of")
 
-    try:
-        if sim == "sandbox":
-            raise simulated["sandbox"][2]
-        with Tracer("run", conn) as t:
-            with t.span("execute", scenes=len(scenes), qps=len(qps), attempt=attempt):
-                state = Executor(R2Mock(), ForceBotMock(), DiffMock()).run(p)
-            with t.span("judge"):
-                v = judge(p, state)
-        if sim == "timeout":
-            raise simulated["timeout"][2]
-        if sim == "judge":
-            raise simulated["judge"][2]
-    except Exception as e:
-        stage, ftype, _ = simulated.get(sim, ("run", "run_error", None))
-        repo.finish_attempt(conn, attempt, "aborted", note=str(e),
-                            stage=stage, failure_type=ftype, detail=str(e))
-        return {
-            "reply": f"这一轮失败了：{tax.label(ftype)}。数据已保留。",
-            "card": cards.verdict_card(
-                f"执行失败 · {', '.join(scenes)}", "fail", [],
-                f"{tax.label(ftype)}｜attempt={attempt}（第 {attempt_count} 轮，状态 aborted）。"
-                f"处置建议：{tax.describe(ftype)}。失败轮次不计入历史趋势，可保留现场重跑。"),
-            "attempt": attempt,
-            "failure_type": ftype,
-            "stage": stage,
-            "actions_extra": ["重跑上一轮"],
-        }
+    job = repo.new_job(conn, scene)
+    branches: dict[str, dict] = {}
 
-    if sim == "report":
-        repo.finish_attempt(conn, attempt, "aborted", note="报告落库失败",
-                            stage="report", failure_type="report_failed",
-                            detail="模拟落库失败")
-        return {"reply": "这一轮失败了：报告生成 · 报告落库失败。数据已保留。",
-                "card": cards.verdict_card(f"执行失败 · {', '.join(scenes)}", "fail", [],
-                                           f"{tax.label('report_failed')}｜attempt={attempt}。"
-                                           f"处置建议：{tax.describe('report_failed')}。"),
-                "attempt": attempt, "failure_type": "report_failed", "stage": "report"}
+    with Tracer("run", conn) as t:
+        if load:
+            branches["load"] = _branch(conn, t, job, scene, "load", sim, parent,
+                                       lambda: _run_load(scene, qps))
+        if do_diff:
+            branches["diff"] = _branch(conn, t, job, scene, "diff", sim, parent,
+                                       lambda: _run_diff(scene))
 
-    # 成功：落一条 task + report，历史可见
-    task_id = f"T-{attempt.split('-', 1)[1]}"
-    diff_rate = max((d.get("diff_rate", 0) for d in state.get("diff", {}).values()), default=0.0)
-    p99 = max((d["p99"] for by in state.get("load_test", {}).values() for d in by.values()), default=0.0)
-    repo.insert_task_report(conn, task_id, scenes[0], _graph_of(conn, scenes[0]),
-                            diff_rate, p99, round(p99 / 1.9, 1),
-                            "pass" if v.passed else "fail")
-    repo.finish_attempt(conn, attempt, "completed", task_id=task_id)
+        aa_emr = plan.get("aa_emr")
+        validity = repo.validity_from_aa(aa_emr)
+        status = repo.job_status_from_branches({k: v["ok"] for k, v in branches.items()})
+        note = "；".join(f"{k}:{v['label']}" for k, v in branches.items() if not v["ok"])
+        repo.finish_job(conn, job, status, validity, note)
+
+    # 有产出才写历史
+    task_id = None
+    if status in ("completed", "partial"):
+        task_id = f"T-{job.split('-', 1)[1]}"
+        diff_rate = branches.get("diff", {}).get("diff_rate", 0.0)
+        p99 = branches.get("load", {}).get("p99", 0.0)
+        repo.insert_task_report(conn, task_id, scene, _graph_of(conn, scene),
+                                diff_rate, p99, round(p99 / 1.9, 1) if p99 else 0,
+                                "pass" if status == "completed" else "partial")
 
     metrics = []
-    if do_diff:
-        metrics.append({"name": "diff", "value": f"{diff_rate:.2%}", "ok": diff_rate <= p.diff_threshold})
-    if load:
-        metrics.append({"name": "p99", "value": f"{p99:.1f}ms", "ok": p99 <= p.p99_baseline * 1.1})
+    if "diff" in branches:
+        b = branches["diff"]
+        metrics.append({"name": "diff", "value": f"{b['diff_rate']:.2%}" if b["ok"] else "未产出",
+                        "ok": b["ok"]})
+    if "load" in branches:
+        b = branches["load"]
+        metrics.append({"name": "p99", "value": f"{b['p99']:.1f}ms" if b["ok"] else "未产出",
+                        "ok": b["ok"]})
 
-    return {"reply": f"跑完了，已记为 {task_id}。",
-            "card": cards.verdict_card(f"执行结果 · {', '.join(scenes)}",
-                                       "pass" if v.passed else "fail", metrics,
-                                       "；".join(v.reasons) or "各项均在阈值内。"),
-            "trace_id": t.trace_id, "attempt": attempt, "task_id": task_id}
+    title = {"completed": "✅ 全部完成", "partial": "⚠️ 部分完成", "failed": "❌ 全部失败"}[status]
+    note = _note_for(status, validity, branches, aa_emr)
+
+    card = cards.verdict_card(f"执行结果 · {scene}", "pass" if status == "completed" else (
+        "warn" if status == "partial" else "fail"), metrics, note)
+    card["job"] = job
+    card["job_status"] = status
+    card["validity"] = validity
+    card["branches"] = {k: {"ok": v["ok"], "label": v["label"]} for k, v in branches.items()}
+    card["title"] = title + " · " + scene
+
+    return {"reply": _reply(status, validity), "card": card, "job": job,
+            "task_id": task_id, "trace_id": t.trace_id}
+
+
+def _note_for(status: str, validity: str, branches: dict, aa_emr) -> str:
+    parts = []
+    for name, b in branches.items():
+        parts.append(f"{name}：{'成功' if b['ok'] else b['label']}")
+    note = "；".join(parts)
+    if validity == "invalid":
+        note += f"。⚠️ 结论无效：AA 观测一致率 {aa_emr:.0%} 低于阈值，A/B 差异不可信"
+    elif validity == "unknown":
+        note += "。结论有效性未知（未提供 AA 观测一致率）"
+    return note
+
+
+def _reply(status: str, validity: str) -> str:
+    base = {"completed": "全部完成。", "partial": "部分完成。",
+            "failed": "全部失败，本轮数据已保留。"}[status]
+    if validity == "invalid":
+        base += "但结论无效（AA 不一致）。"
+    return base
+
+
+def _branch(conn, tracer, job, scene, name, sim, parent, fn) -> dict:
+    att = repo.new_attempt(conn, scene, parent=parent, job_id=job, branch=name)
+    fail_sim = {"load": "load", "diff": "diff"}.get(sim)
+    try:
+        with tracer.span(f"branch_{name}", branch=name, attempt=att):
+            if sim == "sandbox" or fail_sim == name:
+                raise RuntimeError(f"{name} 分支执行失败（模拟）")
+            data = fn()
+        repo.finish_attempt(conn, att, "completed")
+        data["ok"] = True
+        data["label"] = "成功"
+        data["attempt"] = att
+        return data
+    except Exception as e:
+        ftype = "sandbox_unavailable" if sim == "sandbox" else "run_error"
+        repo.finish_attempt(conn, att, "aborted", note=str(e),
+                            stage=tax.stage_of(ftype), failure_type=ftype, detail=str(e))
+        return {"ok": False, "label": tax.label(ftype), "attempt": att,
+                "diff_rate": 0.0, "p99": 0.0}
+
+
+def _run_load(scene: str, qps: list[int]) -> dict:
+    data = ForceBotMock().run({"scene": scene, "qps": max(qps)}).data
+    return {"p99": data["p99"], "avg": data["avg"], "qps": data["qps"]}
+
+
+def _run_diff(scene: str) -> dict:
+    data = DiffMock().run({"scene": scene}).data
+    return {"diff_rate": data["diff_rate"]}
 
 
 def _graph_of(conn, scene_id: str) -> str:

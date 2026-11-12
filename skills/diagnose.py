@@ -103,6 +103,7 @@ def run(conn, task_id: str) -> dict:
     card["change"] = change_block
     card["trend"] = trend
     card["failures"] = failures
+    card["jobs"] = repo.job_summary(conn, ctx["scene"]["id"])
     return {"reply": f"{task_id} 的诊断结果：", "card": card}
 
 

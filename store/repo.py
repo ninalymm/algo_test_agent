@@ -125,18 +125,6 @@ def next_round(conn, scene_id: str) -> int:
     return int(row[0]) + 1
 
 
-def new_attempt(conn, scene_id: str, parent: str | None = None) -> str:
-    import datetime
-    aid = f"A-{datetime.datetime.now().strftime('%m%d%H%M%S')}-{next_round(conn, scene_id)}"
-    conn.execute(
-        "INSERT INTO attempt(id, scene_id, task_id, round, status, parent_attempt, created_at, note) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (aid, scene_id, None, next_round(conn, scene_id), "running", parent,
-         datetime.datetime.now().isoformat(timespec="seconds"), ""))
-    conn.commit()
-    return aid
-
-
 def finish_attempt(conn, attempt_id: str, status: str, task_id: str | None = None,
                    note: str = "", stage: str | None = None,
                    failure_type: str | None = None, detail: str = "") -> None:
@@ -177,3 +165,72 @@ def insert_task_report(conn, task_id: str, scene_id: str, graph_id: str,
     conn.execute("INSERT OR REPLACE INTO report(task_id, diff_rate, p99, avg, verdict, reasons) "
                  "VALUES (?,?,?,?,?,?)", (task_id, diff_rate, p99, avg, verdict, "[]"))
     conn.commit()
+
+
+# ---------- job（一次执行请求，含多个分支） ----------
+
+VALIDITY_THRESHOLD = 0.90      # AA 观测一致率低于此值 → 结论无效
+
+
+def new_job(conn, scene_id: str) -> str:
+    import datetime
+    import uuid
+    jid = f"J-{datetime.datetime.now().strftime('%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}"
+    conn.execute("INSERT INTO job(id, scene_id, status, validity, created_at, note) "
+                 "VALUES (?,?,?,?,?,?)",
+                 (jid, scene_id, "running", "unknown",
+                  datetime.datetime.now().isoformat(timespec="seconds"), ""))
+    conn.commit()
+    return jid
+
+
+def finish_job(conn, job_id: str, status: str, validity: str, note: str = "") -> None:
+    conn.execute("UPDATE job SET status = ?, validity = ?, note = ? WHERE id = ?",
+                 (status, validity, note, job_id))
+    conn.commit()
+
+
+def get_job(conn, job_id: str) -> dict | None:
+    rows = _rows(conn.execute("SELECT * FROM job WHERE id = ?", (job_id,)))
+    return rows[0] if rows else None
+
+
+def job_status_from_branches(branches: dict) -> str:
+    """branches: {"diff": bool, "load": bool} —— True 表示该分支成功。"""
+    ok = sum(1 for v in branches.values() if v)
+    if ok == len(branches) and ok > 0:
+        return "completed"
+    if ok > 0:
+        return "partial"
+    return "failed"
+
+
+def validity_from_aa(aa_emr: float | None) -> str:
+    """AA 观测一致率决定结论是否可用。"""
+    if aa_emr is None:
+        return "unknown"
+    return "valid" if aa_emr >= VALIDITY_THRESHOLD else "invalid"
+
+
+def job_summary(conn, scene_id: str) -> dict:
+    rows = _rows(conn.execute("SELECT * FROM job WHERE scene_id = ? ORDER BY created_at DESC LIMIT 200",
+                              (scene_id,)))
+    by_status, by_validity = {}, {}
+    for r in rows:
+        by_status[r["status"]] = by_status.get(r["status"], 0) + 1
+        by_validity[r["validity"]] = by_validity.get(r["validity"], 0) + 1
+    return {"total": len(rows), "by_status": by_status, "by_validity": by_validity,
+            "last": rows[0]["id"] if rows else None}
+
+
+def new_attempt(conn, scene_id: str, parent: str | None = None,
+                job_id: str | None = None, branch: str | None = None) -> str:
+    import datetime
+    aid = f"A-{datetime.datetime.now().strftime('%m%d%H%M%S')}-{next_round(conn, scene_id)}"
+    conn.execute(
+        "INSERT INTO attempt(id, scene_id, task_id, round, status, parent_attempt, "
+        "created_at, note, job_id, branch) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (aid, scene_id, None, next_round(conn, scene_id), "running", parent,
+         datetime.datetime.now().isoformat(timespec="seconds"), "", job_id, branch))
+    conn.commit()
+    return aid

@@ -95,24 +95,45 @@ class TestRunSkill(unittest.TestCase):
         self.assertTrue(p["load"] and p["diff"])
 
     def test_execute_returns_verdict(self):
-        r = run.execute(self.conn, {"scenes": ["20260301-0001"], "qps": [1200],
+        r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
                                     "load": True, "diff": True})
         self.assertEqual(r["card"]["type"], "verdict")
-        self.assertTrue(r["attempt"].startswith("A-"))
+        self.assertTrue(r["job"].startswith("J-"))
+        self.assertEqual(r["card"]["job_status"], "completed")
+        self.assertEqual(set(r["card"]["branches"]), {"diff", "load"})
 
-    def test_failed_attempt_is_kept_not_overwritten(self):
-        before = repo.attempt_summary(self.conn, "20260301-0001")["total"]
-        r = run.execute(self.conn, {"scenes": ["20260301-0001"], "qps": [1200],
-                                    "load": True, "diff": True, "simulate_fail": "timeout"})
-        self.assertEqual(r["card"]["status"], "fail")
-        self.assertEqual(r["failure_type"], "run_timeout")
-        self.assertEqual(r["stage"], "run")
-        after = repo.attempt_summary(self.conn, "20260301-0001")
-        self.assertEqual(after["total"], before + 1)      # 轮次保留
-        self.assertGreaterEqual(after["aborted"], 1)      # 失败轮可追溯
-        # 失败轮不写 task，不污染历史
-        self.assertFalse(r.get("task_id"))
+    def test_all_branches_failed_keeps_no_task(self):
+        r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
+                                    "load": True, "diff": True, "simulate_fail": "sandbox"})
+        self.assertEqual(r["card"]["job_status"], "failed")
+        self.assertIsNone(r["task_id"])          # 全失败不写历史
         self.assertIn("已保留", r["reply"])
+
+    def test_partial_diff_failed_load_ok(self):
+        r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
+                                    "load": True, "diff": True, "simulate_fail": "diff"})
+        self.assertEqual(r["card"]["job_status"], "partial")
+        self.assertIsNotNone(r["task_id"])       # 有产出就写历史
+        self.assertTrue(r["card"]["branches"]["load"]["ok"])
+        self.assertFalse(r["card"]["branches"]["diff"]["ok"])
+
+    def test_partial_load_failed_diff_ok(self):
+        r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
+                                    "load": True, "diff": True, "simulate_fail": "load"})
+        self.assertEqual(r["card"]["job_status"], "partial")
+        self.assertFalse(r["card"]["branches"]["load"]["ok"])
+        self.assertTrue(r["card"]["branches"]["diff"]["ok"])
+
+    def test_invalid_when_aa_low(self):
+        r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
+                                    "load": True, "diff": True, "aa_emr": 0.85})
+        self.assertEqual(r["card"]["validity"], "invalid")
+        self.assertIn("结论无效", r["card"]["note"])
+
+    def test_valid_when_aa_ok(self):
+        r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
+                                    "load": True, "diff": True, "aa_emr": 0.97})
+        self.assertEqual(r["card"]["validity"], "valid")
 
 
 class TestClarify(unittest.TestCase):
@@ -189,20 +210,23 @@ class TestFailureTaxonomy(unittest.TestCase):
         self.assertTrue(tax.retryable("run_timeout"))
         self.assertFalse(tax.retryable("report_failed"))
 
-    def test_three_simulated_failures_are_classified(self):
-        for sim, expected in (("sandbox", "sandbox_unavailable"),
-                              ("timeout", "run_timeout"),
-                              ("report", "report_failed")):
-            r = run.execute(self.conn, {"scenes": ["20260301-0001"], "qps": [1200],
-                                        "load": True, "diff": True, "simulate_fail": sim})
-            self.assertEqual(r["failure_type"], expected)
+    def test_branch_failure_is_classified(self):
+        r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
+                                    "load": True, "diff": True, "simulate_fail": "diff"})
+        self.assertIn("执行 · 执行报错", r["card"]["branches"]["diff"]["label"])
+
+    def test_sandbox_failure_hits_both_branches(self):
+        r = run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
+                                    "load": True, "diff": True, "simulate_fail": "sandbox"})
+        self.assertIn("环境准备", r["card"]["branches"]["diff"]["label"])
+        self.assertEqual(r["card"]["job_status"], "failed")
 
     def test_summary_groups_by_type(self):
-        run.execute(self.conn, {"scenes": ["20260301-0001"], "qps": [1200],
+        run.execute(self.conn, {"scene": "20260301-0001", "qps": [1200],
                                 "load": True, "diff": True, "simulate_fail": "sandbox"})
         s = repo.attempt_summary(self.conn, "20260301-0001")
         self.assertIn("sandbox_unavailable", s["by_type"])
-        self.assertEqual(s["by_stage"]["sandbox"], 1)
+        self.assertGreaterEqual(s["by_stage"]["sandbox"], 1)
 
 
 class TestRouterV2(unittest.TestCase):

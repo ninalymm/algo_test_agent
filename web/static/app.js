@@ -42,10 +42,24 @@ function renderCard(card, meta) {
   const head = el('div', 'head');
   head.appendChild(el('span', '', card.title || '结果'));
   const statusText = {pass: '✅ 通过', fail: '❌ 不通过', warn: '⚠️ 注意'}[card.status] || '';
-  head.appendChild(el('span', card.status === 'fail' ? 'bad' : 'ok', statusText));
+  const validityTag = card.validity === 'invalid' ? ' · 结论无效'
+    : card.validity === 'unknown' ? ' · 有效性未校验' : '';
+  head.appendChild(el('span', card.status === 'fail' ? 'bad' : 'ok', statusText + validityTag));
   wrap.appendChild(head);
 
   const body = el('div', 'body');
+
+  if (card.branches) {
+    const box = el('div', 'change');
+    box.appendChild(el('div', 'change-title', `执行分支 · ${card.job || ''}`));
+    Object.entries(card.branches).forEach(([k, v]) => {
+      box.appendChild(el('div', 'change-meta ' + (v.ok ? 'ok' : 'bad'),
+        `${k === 'diff' ? 'diff' : '压测'}：${v.ok ? '成功' : v.label}`));
+    });
+    box.appendChild(el('div', 'change-meta',
+      `job 状态：${card.job_status || '-'}｜结论：${card.validity || '-'}`));
+    body.appendChild(box);
+  }
 
   if (card.change) {
     const c = card.change;
@@ -93,6 +107,14 @@ function renderCard(card, meta) {
     box.appendChild(el('div', 'change-title', `近 ${t.n} 次`));
     box.appendChild(el('div', 'change-meta', 'p99：' + t.p99));
     box.appendChild(el('div', 'change-meta', 'diff：' + t.diff));
+    if (card.jobs && card.jobs.by_status) {
+      const parts = Object.entries(card.jobs.by_status).map(([k, v]) => `${k} ${v}`).join('、');
+      box.appendChild(el('div', 'change-meta', `历史 job：${parts}`));
+      if (card.jobs.by_validity && card.jobs.by_validity.invalid) {
+        box.appendChild(el('div', 'change-meta warn',
+          `其中 ${card.jobs.by_validity.invalid} 次结论无效（AA 不一致）`));
+      }
+    }
     if (card.failures && card.failures.total) {
       box.appendChild(el('div', 'change-meta warn',
         `另有 ${card.failures.total} 轮失败未计入（按阶段归类）：`));

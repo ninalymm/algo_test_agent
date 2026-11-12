@@ -71,7 +71,17 @@ CREATE TABLE IF NOT EXISTS span (
   attrs    TEXT
 );
 
--- 执行轮次：失败/超时的数据不覆盖，用 attempt 链表达重试关系
+-- 一次执行请求：可能包含 diff 与压测两个分支
+CREATE TABLE IF NOT EXISTS job (
+  id         TEXT PRIMARY KEY,
+  scene_id   TEXT,
+  status     TEXT,      -- running / completed / partial / failed
+  validity   TEXT,      -- valid / invalid / unknown
+  created_at TEXT,
+  note       TEXT
+);
+
+-- 执行轮次（按分支）：失败/超时的数据不覆盖，用 attempt 链表达重试关系
 CREATE TABLE IF NOT EXISTS attempt (
   id             TEXT PRIMARY KEY,
   scene_id       TEXT,
@@ -81,6 +91,8 @@ CREATE TABLE IF NOT EXISTS attempt (
   parent_attempt TEXT,      -- 重试指向上一轮
   created_at     TEXT,
   note           TEXT,
+  job_id         TEXT,   -- 所属 job
+  branch         TEXT,   -- diff / load
   stage          TEXT,   -- precheck / sandbox / recording / run / report / judge
   failure_type   TEXT,   -- param_invalid / sandbox_unavailable / ...
   detail         TEXT

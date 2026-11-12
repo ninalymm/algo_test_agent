@@ -20,7 +20,8 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 MIGRATIONS = {
     "change": [("title", "TEXT"), ("files", "TEXT")],
-    "attempt": [("stage", "TEXT"), ("failure_type", "TEXT"), ("detail", "TEXT")],
+    "attempt": [("stage", "TEXT"), ("failure_type", "TEXT"), ("detail", "TEXT"),
+                ("job_id", "TEXT"), ("branch", "TEXT")],
 }
 
 
