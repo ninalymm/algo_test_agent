@@ -34,6 +34,10 @@ python3 -m unittest discover -s tests
 # 可选：启用 LangGraph 版本（run 链路的多轮状态与 interrupt 确认）
 python3 -m venv venv && ./venv/bin/pip install -r requirements-langgraph.txt
 ./venv/bin/python -m web.server      # 检测到 langgraph 就自动走图版本
+
+# 可选：LangSmith tracing（默认关闭，需 key + 显式开关）
+cp .env.example .env                 # 填 LANGSMITH_API_KEY
+LANGSMITH_ENABLED=true ./venv/bin/python -m web.server
 ```
 
 ## 架构

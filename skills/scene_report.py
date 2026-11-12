@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from context import assembler, timeline
+from observe.tracing import traceable
 from skills import cards
 from store import repo
 
@@ -10,6 +11,7 @@ DIFF_THRESHOLD = 0.01
 P99_DRIFT = 0.20          # 单次 p99 偏离历史中位数超过 20% 视为异常
 
 
+@traceable
 def run(conn, scene_id: str, n: int = 5) -> dict:
     rows = timeline.series(conn, scene_id, n)
     if len(rows) < 3:

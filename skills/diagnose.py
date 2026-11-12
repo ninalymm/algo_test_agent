@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from context import assembler, timeline
+from observe.tracing import traceable
 from skills import cards
 from store import repo
 
 DIFF_THRESHOLD = 0.01
 
 
+@traceable
 def run(conn, task_id: str) -> dict:
     ctx = assembler.build_context(conn, task_id)
     if not ctx:

@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
 sys.path.insert(0, str(ROOT))
 
+from observe import tracing  # noqa: E402
 from skills import router  # noqa: E402
 from store.db import connect  # noqa: E402
 from store.seed import seed  # noqa: E402
@@ -129,8 +130,14 @@ def main():
         seed()
         CONN = connect()
 
+    st = tracing.setup()
     srv = Server(("127.0.0.1", args.port), Handler)
     print(f"chat ui  →  http://127.0.0.1:{args.port}")
+    if st["enabled"]:
+        print(f"langsmith →  已启用（project={st['project']}）")
+    else:
+        reason = "未设置 key" if not st["key_present"] else "开关关闭（LANGSMITH_ENABLED=false）"
+        print(f"langsmith →  未启用（{reason}）")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

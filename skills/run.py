@@ -13,6 +13,7 @@ from agent.judge import judge
 from agent.models import Plan
 from observe.tracer import Tracer
 from agent import failure_taxonomy as tax
+from observe.tracing import traceable
 from skills import clarify, cards
 from store import repo
 from tools.diff_mock import DiffMock
@@ -131,6 +132,7 @@ def _scenes(conn) -> list[dict]:
 
 # ---------- 执行 ----------
 
+@traceable
 def execute(conn, plan: dict) -> dict:
     """一次执行请求 = 一个 job，内含 diff / 压测两个独立分支。
 

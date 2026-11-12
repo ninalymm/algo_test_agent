@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 from agent.models import Plan, Verdict
+from observe.tracing import traceable
 from tools.llm import explain
 
 
+@traceable
 def judge(plan: Plan, state: dict) -> Verdict:
     reasons, suggestions = [], []
 
