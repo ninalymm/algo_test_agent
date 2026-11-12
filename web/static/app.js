@@ -46,6 +46,22 @@ function renderCard(card, meta) {
   wrap.appendChild(head);
 
   const body = el('div', 'body');
+
+  if (card.change) {
+    const c = card.change;
+    const box = el('div', 'change');
+    box.appendChild(el('div', 'change-title', '本次改动'));
+    box.appendChild(el('div', 'change-line', `${c.title}`));
+    box.appendChild(el('div', 'change-meta',
+      `${c.id} · ${c.commit}${c.mr ? ' · ' + c.mr : ''} · ${c.author || ''} · ${c.ts || ''}`));
+    if (c.files && c.files.length) {
+      box.appendChild(el('div', 'change-meta', '文件：' + c.files.join('、')));
+    }
+    box.appendChild(el('div', 'change-meta',
+      `影响：图 ${(c.graphs || []).join('、')} → ${(c.scenes || []).length} 个场景`));
+    body.appendChild(box);
+  }
+
   (card.metrics || []).forEach(m => {
     const row = el('div', 'metric');
     row.appendChild(el('span', '', m.name));
@@ -70,6 +86,17 @@ function renderCard(card, meta) {
     body.appendChild(tbl);
   }
   if (card.note) body.appendChild(el('div', 'note', card.note));
+
+  if (card.trend) {
+    const t = card.trend;
+    const box = el('div', 'trendblock');
+    box.appendChild(el('div', 'change-title', `近 ${t.n} 次`));
+    box.appendChild(el('div', 'change-meta', 'p99：' + t.p99));
+    box.appendChild(el('div', 'change-meta', 'diff：' + t.diff));
+    if (card.aborted) box.appendChild(el('div', 'change-meta warn',
+      `另有 ${card.aborted} 轮失败未计入（见 attempt）`));
+    body.appendChild(box);
+  }
 
   const actions = el('div', 'actions');
   (card.actions || []).forEach(a => {

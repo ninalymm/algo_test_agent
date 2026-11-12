@@ -37,3 +37,8 @@ pre.trace{background:#0b0f14;border:1px solid var(--line);border-radius:10px;pad
 .trow{display:grid;grid-template-columns:70px 52px 74px 74px 1fr;gap:6px;padding:5px 0;border-bottom:1px dashed #1e242d}
 .trow:last-child{border-bottom:none}
 .thead{color:var(--muted);border-bottom:1px solid var(--line)}
+
+.change,.trendblock{background:#0d1218;border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin-bottom:9px}
+.change-title{font-size:12px;color:var(--muted);margin-bottom:4px;letter-spacing:.5px}
+.change-line{font-size:13.5px;margin-bottom:3px}
+.change-meta{font-size:12px;color:var(--muted)}

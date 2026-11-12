@@ -50,6 +50,24 @@ class TestDiagnose(unittest.TestCase):
         r = diagnose.run(self.conn, "T-005")
         self.assertIn("p99", r["card"]["note"])
 
+    def test_change_block(self):
+        r = diagnose.run(self.conn, "T-005")
+        c = r["card"]["change"]
+        self.assertEqual(c["id"], "C-001")
+        self.assertEqual(c["title"], "召回算子打分逻辑调整")
+        self.assertIn("1000001", c["graphs"])
+        self.assertEqual(len(c["scenes"]), 2)      # 共享图展开
+
+    def test_trend_summary(self):
+        r = diagnose.run(self.conn, "T-005")
+        t = r["card"]["trend"]
+        self.assertEqual(t["n"], 5)
+        self.assertIn("上升", t["p99"])
+
+    def test_task_without_change(self):
+        r = diagnose.run(self.conn, "T-001")
+        self.assertIsNone(r["card"]["change"])
+
     def test_missing_task(self):
         r = diagnose.run(self.conn, "T-999")
         self.assertIsNone(r["card"])

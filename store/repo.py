@@ -64,6 +64,7 @@ def get_change(conn, change_id: str) -> dict | None:
         return None
     c = rows[0]
     c["graph_ids"] = json.loads(c["graph_ids"] or "[]")
+    c["files"] = [f for f in (c.get("files") or "").split(",") if f]
     return c
 
 

@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS change (
   mr        TEXT,
   graph_ids TEXT,
   author    TEXT,
-  ts        TEXT
+  ts        TEXT,
+  title     TEXT,     -- 本次改动一句话
+  files     TEXT      -- 变更文件/算子（逗号分隔）
 );
 
 CREATE TABLE IF NOT EXISTS task (

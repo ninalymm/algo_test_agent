@@ -30,8 +30,10 @@ SCENE_GRAPH = [
 ]
 
 CHANGES = [
-    ("C-001", "abc123f", "MR-8801", ["1000001"], "algo-wang", "2026-11-05 10:00"),
-    ("C-002", "def456a", "MR-8802", ["1000002"], "algo-li", "2026-11-06 14:00"),
+    ("C-001", "abc123f", "MR-8801", ["1000001"], "algo-wang", "2026-11-05 10:00",
+     "召回算子打分逻辑调整", "recall_score_op.py,rank_weight.json"),
+    ("C-002", "def456a", "MR-8802", ["1000002"], "algo-li", "2026-11-06 14:00",
+     "商详排序特征扩列", "rank_feature.py"),
 ]
 
 
@@ -66,8 +68,10 @@ def seed(path=None) -> None:
     conn.executemany("INSERT INTO scene(id, app_id, name, entry_config, traffic_share) VALUES (?,?,?,?,?)", SCENES)
     conn.executemany("INSERT INTO graph(id, name) VALUES (?,?)", GRAPHS)
     conn.executemany("INSERT INTO scene_graph(scene_id, graph_id) VALUES (?,?)", SCENE_GRAPH)
-    conn.executemany("INSERT INTO change(id, commit_id, mr, graph_ids, author, ts) VALUES (?,?,?,?,?,?)",
-                     [(c[0], c[1], c[2], json.dumps(c[3]), c[4], c[5]) for c in CHANGES])
+    conn.executemany(
+        "INSERT INTO change(id, commit_id, mr, graph_ids, author, ts, title, files) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        [(c[0], c[1], c[2], json.dumps(c[3]), c[4], c[5], c[6], c[7]) for c in CHANGES])
 
     for tid, scene, graph, change, ts, diff, p99 in TASKS:
         conn.execute("INSERT INTO task(id, scene_id, graph_id, change_id, trigger, status, ts) "

@@ -44,10 +44,22 @@ def run(conn, task_id: str) -> dict:
     if not snap:
         problems.append("缺少场景快照，本次结果与环境的关系不可确认")
 
-    # ④ 变更关联
+    # ④ 本次改动
     change = ctx.get("change")
+    change_block = None
     if change:
-        metrics.append({"name": "关联变更", "value": f"{change['id']}（{change['commit_id']}）", "ok": True})
+        scenes = _affected_scenes(conn, change)
+        change_block = {
+            "id": change["id"],
+            "commit": change["commit_id"],
+            "mr": change.get("mr"),
+            "author": change.get("author"),
+            "ts": change.get("ts"),
+            "title": change.get("title") or "（未填写改动说明）",
+            "files": change.get("files") or [],
+            "graphs": change.get("graph_ids") or [],
+            "scenes": scenes,
+        }
     else:
         problems.append("本次任务未关联代码变更，无法做前后归因")
 
@@ -67,6 +79,30 @@ def run(conn, task_id: str) -> dict:
     if did.get("ok"):
         note += f" DiD：目标 {did['target_delta']:+.2f} / 对照 {did['control_delta']:+.2f} → 净 {did['net']:+.2f}ms。"
 
+    # ⑤ 近 N 次趋势摘要（一行）
+    series = timeline.series(conn, ctx["scene"]["id"], 5)
+    trend = None
+    if len(series) >= 3:
+        p99s = [x["p99"] for x in series]
+        diffs = [x["diff"] for x in series]
+        trend = {
+            "n": len(series),
+            "p99": f"{p99s[0]:.1f} → {p99s[-1]:.1f}ms（{timeline.trend_label(p99s)}）",
+            "diff": f"{diffs[0]:.2%} → {diffs[-1]:.2%}（{timeline.trend_label(diffs)}）",
+        }
+    aborted = repo.attempt_summary(conn, ctx["scene"]["id"])["aborted"]
+
     card = cards.verdict_card(f"任务 {task_id} 诊断", status, metrics, note,
-                              ["历史 5 次", "场景对比"])
+                              ["展开趋势", "trace"])
+    card["change"] = change_block
+    card["trend"] = trend
+    card["aborted"] = aborted
     return {"reply": f"{task_id} 的诊断结果：", "card": card}
+
+
+def _affected_scenes(conn, change: dict) -> list[str]:
+    """图 → 场景展开（1:N）。"""
+    out = []
+    for gid in change.get("graph_ids") or []:
+        out.extend(s["id"] for s in repo.scenes_of_graph(conn, gid))
+    return out
