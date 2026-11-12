@@ -1,0 +1,116 @@
+"""零依赖 Web Chat：stdlib http.server + 原生 JS。
+
+启动：
+    python3 -m web.server            # http://127.0.0.1:8000
+    python3 -m web.server --port 9000
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlparse
+
+ROOT = Path(__file__).resolve().parent.parent
+STATIC = Path(__file__).resolve().parent / "static"
+sys.path.insert(0, str(ROOT))
+
+from skills import router  # noqa: E402
+from store.db import connect  # noqa: E402
+from store.seed import seed  # noqa: E402
+from store import repo  # noqa: E402
+
+CONN = None
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        pass  # 静默
+
+    # ---------- helpers ----------
+    def _json(self, obj, code=200):
+        body = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _file(self, path: Path, ctype: str):
+        if not path.exists():
+            self.send_error(404)
+            return
+        data = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    # ---------- routes ----------
+    def do_GET(self):
+        p = urlparse(self.path).path
+        if p == "/":
+            return self._file(STATIC / "index.html", "text/html; charset=utf-8")
+        if p.startswith("/static/"):
+            f = STATIC / p[len("/static/"):]
+            ctype = "text/css" if f.suffix == ".css" else "application/javascript"
+            return self._file(f, ctype + "; charset=utf-8")
+        if p == "/api/tasks":
+            rows = [{"id": r["id"], "scene": r["scene_id"], "ts": r["ts"],
+                     "change": r["change_id"]} for r in repo.list_tasks(CONN, 20)]
+            return self._json({"tasks": rows})
+        if p.startswith("/api/trace/"):
+            tid = p.rsplit("/", 1)[-1]
+            spans = repo.spans_of_trace(CONN, tid)
+            return self._json({"trace_id": tid, "spans": spans})
+        self.send_error(404)
+
+    def do_POST(self):
+        p = urlparse(self.path).path
+        if p == "/api/chat":
+            n = int(self.headers.get("Content-Length", 0))
+            payload = json.loads(self.rfile.read(n) or b"{}")
+            msg = (payload.get("message") or "").strip()
+            if not msg:
+                return self._json({"reply": "说点什么吧。", "card": None})
+            try:
+                result = router.route(CONN, msg)
+            except Exception as e:  # 不让异常打断会话
+                return self._json({"reply": f"处理出错：{e}", "card": None, "intent": "error"})
+            return self._json(result)
+        if p == "/api/execute":
+            n = int(self.headers.get("Content-Length", 0))
+            payload = json.loads(self.rfile.read(n) or b"{}")
+            from skills import selftest
+            return self._json(selftest.execute(CONN, payload.get("plan") or {}))
+        self.send_error(404)
+
+
+def main():
+    global CONN
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--init-db", action="store_true", help="重建样例数据")
+    args = ap.parse_args()
+
+    if args.init_db:
+        seed()
+    CONN = connect()
+    if not repo.list_tasks(CONN, 1):
+        seed()
+        CONN = connect()
+
+    srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    print(f"chat ui  →  http://127.0.0.1:{args.port}")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nbye")
+
+
+if __name__ == "__main__":
+    main()

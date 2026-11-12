@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>算法质量 Agent</title>
+<link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+<header>
+  <div class="brand">算法质量 Agent<span class="dot"></span></div>
+  <div class="sub">查询 · 自测 · 趋势</div>
+</header>
+
+<main id="chat">
+  <div class="msg bot">
+    <div class="bubble">
+      我是算法质量 Agent。可以试试：<br/>
+      ① 任务 T-005 怎么样<br/>
+      ② 我改完了 abc123f<br/>
+      ③ 场景 20260301-0001 最近怎么样
+    </div>
+  </div>
+</main>
+
+<div id="chips">
+  <button data-q="任务 T-005 怎么样">查任务</button>
+  <button data-q="我改完了 abc123f">自测</button>
+  <button data-q="场景 20260301-0001 最近趋势">看趋势</button>
+</div>
+
+<form id="composer">
+  <input id="input" placeholder="问点什么…" autocomplete="off"/>
+  <button type="submit">发送</button>
+</form>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
