@@ -66,3 +66,39 @@ def split_by_change(rows: list[dict], change_ts: str) -> tuple[list[dict], list[
     before = [r for r in rows if (r.get("ts") or "") < change_ts]
     after = [r for r in rows if (r.get("ts") or "") >= change_ts]
     return before, after
+
+
+# ---------- 序列分析（压测 + diff 双维度） ----------
+
+def series(conn, scene_id: str, n: int = 5) -> list[dict]:
+    """最近 n 次任务的压测与 diff 双维度序列（按时间正序）。"""
+    rows = repo.reports_with_task(conn, scene_id, n)
+    rows = list(reversed(rows))
+    return [{"id": r["id"], "ts": r["ts"], "diff": r["diff_rate"], "p99": r["p99"]}
+            for r in rows if r.get("p99") is not None]
+
+
+def robust_z(values: list[float], target: float) -> float:
+    """基于 MAD 的稳健 z 分数 —— 比均值/标准差抗离群点。"""
+    if len(values) < 3:
+        return 0.0
+    med = median(values)
+    deviations = [abs(v - med) for v in values]
+    mad = median(deviations) or 1e-9
+    return (target - med) / (1.4826 * mad)
+
+
+def trend_label(values: list[float]) -> str:
+    """用前后半段中位数判断趋势，避免被单点带偏。"""
+    if len(values) < 4:
+        return "样本不足"
+    half = len(values) // 2
+    first, second = median(values[:half]), median(values[half:])
+    delta = second - first
+    base = abs(first) or 1e-9
+    ratio = delta / base
+    if ratio > 0.05:
+        return "上升"
+    if ratio < -0.05:
+        return "下降"
+    return "平稳"

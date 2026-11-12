@@ -18,9 +18,9 @@ class TestSkills(unittest.TestCase):
         cls.conn = connect()
 
     def test_route_intents(self):
-        self.assertEqual(router.route(self.conn, "任务 T-005 怎么样")["intent"], "query")
+        self.assertEqual(router.route(self.conn, "任务 T-005 怎么样")["intent"], "diagnose")
         self.assertEqual(router.route(self.conn, "我改完了 abc123f")["intent"], "selftest")
-        self.assertEqual(router.route(self.conn, "场景 20260301-0001 最近趋势")["intent"], "trend")
+        self.assertEqual(router.route(self.conn, "场景 20260301-0001 最近趋势")["intent"], "scene")
         self.assertEqual(router.route(self.conn, "你好")["intent"], "unknown")
 
     def test_query_card(self):

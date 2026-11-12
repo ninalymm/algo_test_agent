@@ -48,7 +48,22 @@ function renderCard(card, traceId) {
 
   if (card.reasons) card.reasons.forEach(r => body.appendChild(el('div', 'bad', '· ' + r)));
 
-  if (card.rows) {
+  if (card.rows && card.columns) {
+    const tbl = el('div', 'table');
+    const head = el('div', 'trow thead');
+    card.columns.forEach(c => head.appendChild(el('span', '', c)));
+    tbl.appendChild(head);
+    card.rows.forEach(r => {
+      const row = el('div', 'trow');
+      const vals = [r.id, r.ts, r.diff, r.p99, r.flag];
+      vals.forEach((v, i) => {
+        const cell = el('span', i === 4 && v !== '—' ? 'warn' : '', String(v ?? ''));
+        row.appendChild(cell);
+      });
+      tbl.appendChild(row);
+    });
+    body.appendChild(tbl);
+  } else if (card.rows) {
     card.rows.forEach(r => {
       const row = el('div', 'metric');
       row.appendChild(el('span', '', r.stage));
