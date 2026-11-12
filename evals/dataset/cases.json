@@ -1,0 +1,85 @@
+[
+  {
+    "id": "E-001",
+    "name": "参数幻觉：traffic_sign 编造",
+    "truth": {"traffic_sign": ["20260301-0001"], "project": ["proj-live"]},
+    "contract": {},
+    "trace": {
+      "task_state": "completed",
+      "human_label": "completed",
+      "tool_calls": [
+        {"tool": "metric_query", "args": {"traffic_sign": "proj-live-001"}},
+        {"tool": "log_query", "args": {"traffic_sign": "proj-live-001"}}
+      ]
+    }
+  },
+  {
+    "id": "E-002",
+    "name": "冗余调用：同工具同参重复 3 次",
+    "truth": {"traffic_sign": ["20260301-0001"]},
+    "contract": {},
+    "trace": {
+      "task_state": "completed",
+      "human_label": "completed",
+      "tool_calls": [
+        {"tool": "metric_query", "args": {"traffic_sign": "20260301-0001"}},
+        {"tool": "metric_query", "args": {"traffic_sign": "20260301-0001"}},
+        {"tool": "metric_query", "args": {"traffic_sign": "20260301-0001"}}
+      ]
+    }
+  },
+  {
+    "id": "E-003",
+    "name": "工具契约：graph_id 前缀错配",
+    "truth": {"traffic_sign": ["20260301-0001"]},
+    "contract": {"graph_parse": {"graph_id": "^biz-\\d+$"}},
+    "trace": {
+      "task_state": "completed",
+      "human_label": "completed",
+      "tool_calls": [
+        {"tool": "graph_parse", "args": {"graph_id": "merger-10700"}}
+      ]
+    }
+  },
+  {
+    "id": "E-004",
+    "name": "度量口径：任务实际成功但落库 failed",
+    "truth": {"traffic_sign": ["20260301-0001"]},
+    "contract": {},
+    "trace": {
+      "task_state": "failed",
+      "human_label": "completed",
+      "tool_calls": [
+        {"tool": "metric_query", "args": {"traffic_sign": "20260301-0001"}}
+      ]
+    }
+  },
+  {
+    "id": "E-005",
+    "name": "正例：参数正确、无冗余、契约合规",
+    "truth": {"traffic_sign": ["20260301-0001"]},
+    "contract": {"graph_parse": {"graph_id": "^biz-\\d+$"}},
+    "trace": {
+      "task_state": "completed",
+      "human_label": "completed",
+      "tool_calls": [
+        {"tool": "metric_query", "args": {"traffic_sign": "20260301-0001"}},
+        {"tool": "graph_parse", "args": {"graph_id": "biz-1000001"}}
+      ]
+    }
+  },
+  {
+    "id": "E-006",
+    "name": "正例：合理重试（同工具不同参）",
+    "truth": {"traffic_sign": ["20260301-0001", "20260301-0002"]},
+    "contract": {},
+    "trace": {
+      "task_state": "completed",
+      "human_label": "completed",
+      "tool_calls": [
+        {"tool": "metric_query", "args": {"traffic_sign": "20260301-0001"}},
+        {"tool": "metric_query", "args": {"traffic_sign": "20260301-0002"}}
+      ]
+    }
+  }
+]

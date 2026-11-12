@@ -1,0 +1,10 @@
+{
+  "pass_rate": 0.333,
+  "metrics": {
+    "param_fidelity": 0.833,
+    "redundant_call_rate": 0.111,
+    "contract_validity": 0.833,
+    "label_agreement": 0.833
+  },
+  "n": 6
+}

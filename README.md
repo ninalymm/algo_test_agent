@@ -24,7 +24,10 @@ python3 -m web.server            # → http://127.0.0.1:8000
 # 3. 或走 CLI
 python3 agent/main.py --change "图A 召回算子改动" --scenario diff_fail
 
-# 4. 测试
+# 4. 评测（Agent 行为回归）
+python3 -m evals.runner --self-check
+
+# 5. 测试
 python3 -m unittest discover -s tests
 ```
 
@@ -58,6 +61,7 @@ agent/     编排核心：规划 / 执行 / 判读 / 失败分级
 context/   上下文聚合：场景↔图索引、历史时间线、DiD
 skills/    三个能力 + 意图路由 + 卡片结构
 store/     SQLite schema / 仓储 / 样例数据
+evals/     Agent 行为评测：评测集 + 4 个判分器 + 回归门禁
 observe/   trace（traceId + span，落库）
 tools/     工具层（Mock 与真实同签名）
 web/       Web Chat（stdlib 服务 + 原生 JS）
@@ -69,6 +73,7 @@ tests/     单测（17 个）
 
 - [架构说明](docs/architecture.md)
 - [决策记录 ADR](docs/decisions.md) —— D1~D7，每条含「放弃了什么」
+- [评测说明](evals/README.md) —— 四个判分器 + 注入式自检
 
 ## 关键设计
 
@@ -95,4 +100,5 @@ tests/     单测（17 个）
 - [x] P5 Web Chat
 - [ ] 接入真实平台 Adapter
 - [ ] 权限与审计
-- [ ] 评测集与回归（Eval Agent）
+- [x] 评测集与回归（Eval Agent，`evals/`，6 条 case + 基线门禁）
+- [ ] 评测集扩容到 50 条 + 结论正确性抽检
