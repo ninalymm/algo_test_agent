@@ -12,6 +12,7 @@ from agent.executor import Executor
 from agent.judge import judge
 from agent.models import Plan
 from observe.tracer import Tracer
+from agent import failure_taxonomy as tax
 from skills import clarify, cards
 from store import repo
 from tools.diff_mock import DiffMock
@@ -149,25 +150,49 @@ def execute(conn, plan: dict) -> dict:
 
     p = Plan(scenes=scenes, qps_levels=qps, steps=steps)
 
+    sim = plan.get("simulate_fail")
+    simulated = {"sandbox": ("sandbox", "sandbox_unavailable", RuntimeError("沙箱启动失败")),
+                 "timeout": ("run", "run_timeout", TimeoutError("执行超时 1800s")),
+                 "report": ("report", "report_failed", IOError("报告落库失败")),
+                 "judge": ("judge", "judge_error", RuntimeError("判读异常"))}
+
     try:
+        if sim == "sandbox":
+            raise simulated["sandbox"][2]
         with Tracer("run", conn) as t:
             with t.span("execute", scenes=len(scenes), qps=len(qps), attempt=attempt):
                 state = Executor(R2Mock(), ForceBotMock(), DiffMock()).run(p)
             with t.span("judge"):
                 v = judge(p, state)
-        if plan.get("simulate_fail"):
-            raise TimeoutError("模拟超时")
+        if sim == "timeout":
+            raise simulated["timeout"][2]
+        if sim == "judge":
+            raise simulated["judge"][2]
     except Exception as e:
-        repo.finish_attempt(conn, attempt, "aborted", note=str(e))
+        stage, ftype, _ = simulated.get(sim, ("run", "run_error", None))
+        repo.finish_attempt(conn, attempt, "aborted", note=str(e),
+                            stage=stage, failure_type=ftype, detail=str(e))
         return {
-            "reply": "这一轮失败了，但数据已保留。",
+            "reply": f"这一轮失败了：{tax.label(ftype)}。数据已保留。",
             "card": cards.verdict_card(
                 f"执行失败 · {', '.join(scenes)}", "fail", [],
-                f"attempt={attempt}（第 {attempt_count} 轮，状态 aborted）。"
-                f"失败轮次不写入历史，不污染趋势；修复环境后可选择「重跑」。"),
+                f"{tax.label(ftype)}｜attempt={attempt}（第 {attempt_count} 轮，状态 aborted）。"
+                f"处置建议：{tax.describe(ftype)}。失败轮次不计入历史趋势，可保留现场重跑。"),
             "attempt": attempt,
+            "failure_type": ftype,
+            "stage": stage,
             "actions_extra": ["重跑上一轮"],
         }
+
+    if sim == "report":
+        repo.finish_attempt(conn, attempt, "aborted", note="报告落库失败",
+                            stage="report", failure_type="report_failed",
+                            detail="模拟落库失败")
+        return {"reply": "这一轮失败了：报告生成 · 报告落库失败。数据已保留。",
+                "card": cards.verdict_card(f"执行失败 · {', '.join(scenes)}", "fail", [],
+                                           f"{tax.label('report_failed')}｜attempt={attempt}。"
+                                           f"处置建议：{tax.describe('report_failed')}。"),
+                "attempt": attempt, "failure_type": "report_failed", "stage": "report"}
 
     # 成功：落一条 task + report，历史可见
     task_id = f"T-{attempt.split('-', 1)[1]}"

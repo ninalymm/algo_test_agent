@@ -93,8 +93,12 @@ function renderCard(card, meta) {
     box.appendChild(el('div', 'change-title', `近 ${t.n} 次`));
     box.appendChild(el('div', 'change-meta', 'p99：' + t.p99));
     box.appendChild(el('div', 'change-meta', 'diff：' + t.diff));
-    if (card.aborted) box.appendChild(el('div', 'change-meta warn',
-      `另有 ${card.aborted} 轮失败未计入（见 attempt）`));
+    if (card.failures && card.failures.total) {
+      box.appendChild(el('div', 'change-meta warn',
+        `另有 ${card.failures.total} 轮失败未计入（按阶段归类）：`));
+      card.failures.items.forEach(it =>
+        box.appendChild(el('div', 'change-meta', `· ${it.label} × ${it.count}`)));
+    }
     body.appendChild(box);
   }
 

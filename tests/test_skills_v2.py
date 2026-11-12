@@ -103,8 +103,10 @@ class TestRunSkill(unittest.TestCase):
     def test_failed_attempt_is_kept_not_overwritten(self):
         before = repo.attempt_summary(self.conn, "20260301-0001")["total"]
         r = run.execute(self.conn, {"scenes": ["20260301-0001"], "qps": [1200],
-                                    "load": True, "diff": True, "simulate_fail": True})
+                                    "load": True, "diff": True, "simulate_fail": "timeout"})
         self.assertEqual(r["card"]["status"], "fail")
+        self.assertEqual(r["failure_type"], "run_timeout")
+        self.assertEqual(r["stage"], "run")
         after = repo.attempt_summary(self.conn, "20260301-0001")
         self.assertEqual(after["total"], before + 1)      # 轮次保留
         self.assertGreaterEqual(after["aborted"], 1)      # 失败轮可追溯
@@ -172,6 +174,35 @@ class TestClarify(unittest.TestCase):
         r = run.run(self.conn, "算了", sess)
         self.assertIsNone(r["card"])
         self.assertNotIn("pending", sess)
+
+
+class TestFailureTaxonomy(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        seed()
+        cls.conn = connect()
+
+    def test_labels_are_staged(self):
+        from agent import failure_taxonomy as tax
+        self.assertEqual(tax.label("sandbox_unavailable"), "环境准备 · 沙箱不可用")
+        self.assertEqual(tax.label("report_failed"), "报告生成 · 报告落库失败")
+        self.assertTrue(tax.retryable("run_timeout"))
+        self.assertFalse(tax.retryable("report_failed"))
+
+    def test_three_simulated_failures_are_classified(self):
+        for sim, expected in (("sandbox", "sandbox_unavailable"),
+                              ("timeout", "run_timeout"),
+                              ("report", "report_failed")):
+            r = run.execute(self.conn, {"scenes": ["20260301-0001"], "qps": [1200],
+                                        "load": True, "diff": True, "simulate_fail": sim})
+            self.assertEqual(r["failure_type"], expected)
+
+    def test_summary_groups_by_type(self):
+        run.execute(self.conn, {"scenes": ["20260301-0001"], "qps": [1200],
+                                "load": True, "diff": True, "simulate_fail": "sandbox"})
+        s = repo.attempt_summary(self.conn, "20260301-0001")
+        self.assertIn("sandbox_unavailable", s["by_type"])
+        self.assertEqual(s["by_stage"]["sandbox"], 1)
 
 
 class TestRouterV2(unittest.TestCase):

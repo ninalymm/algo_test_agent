@@ -138,9 +138,12 @@ def new_attempt(conn, scene_id: str, parent: str | None = None) -> str:
 
 
 def finish_attempt(conn, attempt_id: str, status: str, task_id: str | None = None,
-                   note: str = "") -> None:
-    conn.execute("UPDATE attempt SET status = ?, task_id = COALESCE(?, task_id), note = ? WHERE id = ?",
-                 (status, task_id, note, attempt_id))
+                   note: str = "", stage: str | None = None,
+                   failure_type: str | None = None, detail: str = "") -> None:
+    conn.execute(
+        "UPDATE attempt SET status = ?, task_id = COALESCE(?, task_id), note = ?, "
+        "stage = ?, failure_type = ?, detail = ? WHERE id = ?",
+        (status, task_id, note, stage, failure_type, detail, attempt_id))
     conn.commit()
 
 
@@ -151,9 +154,16 @@ def attempts_of_scene(conn, scene_id: str, limit: int = 20) -> list[dict]:
 
 
 def attempt_summary(conn, scene_id: str) -> dict:
-    rows = attempts_of_scene(conn, scene_id, 100)
+    """失败必须带口径：按阶段和类型分组，不给一个含糊的总数。"""
+    rows = attempts_of_scene(conn, scene_id, 200)
     aborted = [r for r in rows if r["status"] in ("failed", "timeout", "aborted")]
+    by_stage: dict[str, int] = {}
+    by_type: dict[str, int] = {}
+    for r in aborted:
+        by_stage[r["stage"] or "unknown"] = by_stage.get(r["stage"] or "unknown", 0) + 1
+        by_type[r["failure_type"] or "unknown"] = by_type.get(r["failure_type"] or "unknown", 0) + 1
     return {"total": len(rows), "aborted": len(aborted),
+            "by_stage": by_stage, "by_type": by_type,
             "last": rows[0]["id"] if rows else None}
 
 

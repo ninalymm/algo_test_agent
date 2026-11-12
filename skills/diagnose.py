@@ -90,13 +90,19 @@ def run(conn, task_id: str) -> dict:
             "p99": f"{p99s[0]:.1f} → {p99s[-1]:.1f}ms（{timeline.trend_label(p99s)}）",
             "diff": f"{diffs[0]:.2%} → {diffs[-1]:.2%}（{timeline.trend_label(diffs)}）",
         }
-    aborted = repo.attempt_summary(conn, ctx["scene"]["id"])["aborted"]
+    summary = repo.attempt_summary(conn, ctx["scene"]["id"])
+    from agent import failure_taxonomy as tax
+    failures = {
+        "total": summary["aborted"],
+        "items": [{"label": tax.label(t), "count": c}
+                  for t, c in sorted(summary["by_type"].items(), key=lambda x: -x[1])],
+    }
 
     card = cards.verdict_card(f"任务 {task_id} 诊断", status, metrics, note,
                               ["展开趋势", "trace"])
     card["change"] = change_block
     card["trend"] = trend
-    card["aborted"] = aborted
+    card["failures"] = failures
     return {"reply": f"{task_id} 的诊断结果：", "card": card}
 
 

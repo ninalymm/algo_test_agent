@@ -80,5 +80,8 @@ CREATE TABLE IF NOT EXISTS attempt (
   status         TEXT,      -- running / completed / failed / timeout / aborted
   parent_attempt TEXT,      -- 重试指向上一轮
   created_at     TEXT,
-  note           TEXT
+  note           TEXT,
+  stage          TEXT,   -- precheck / sandbox / recording / run / report / judge
+  failure_type   TEXT,   -- param_invalid / sandbox_unavailable / ...
+  detail         TEXT
 );
