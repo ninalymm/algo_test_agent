@@ -40,6 +40,14 @@ cp .env.example .env                 # 填 LANGSMITH_API_KEY
 LANGSMITH_ENABLED=true ./venv/bin/python -m web.server
 ```
 
+tracing 的几条约定（细节见 `observe/tracing.py`）：
+
+- **开关在调用时判断**，import 之后再打开 `LANGSMITH_ENABLED` 也生效
+- **真实环境变量优先于 `.env`**；空字符串视为未设置，会回落到文件值
+- **token 用量**：把 `usage_metadata(resp["usage"])` 放进函数返回值即可被采集，
+  不必引入 LangChain；`@traceable(run_type="llm")` 才会显示成 LLM 节点
+- **短命脚本**结束前调 `observe.tracing.flush()`，否则后台队列里的尾部 run 可能丢失
+
 ## 架构
 
 ```

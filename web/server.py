@@ -136,7 +136,7 @@ def main():
     if st["enabled"]:
         print(f"langsmith →  已启用（project={st['project']}）")
     else:
-        reason = "未设置 key" if not st["key_present"] else "开关关闭（LANGSMITH_ENABLED=false）"
+        reason = "未设置 key" if not st["key_present"] else f"开关关闭（LANGSMITH_ENABLED={st['switch']}）"
         print(f"langsmith →  未启用（{reason}）")
     try:
         srv.serve_forever()
