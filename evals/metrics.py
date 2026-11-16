@@ -31,17 +31,23 @@ def param_fidelity(trace: dict, truth: dict) -> float:
 # ---------- ② 冗余调用 ----------
 
 def redundant_call_rate(trace: dict) -> float:
-    """同 (tool, args) 被调用超过一次，即计为浪费。"""
+    """同 (tool, args) 被调用超过一次，即计为浪费。
+
+    轮询这类「本来就该重复」的调用，用 trace["repeat_allowance"] 按工具名声明额度：
+    {"job_status": 4} 表示该工具同参最多出现 1+4 次，超出的部分才计入冗余。
+    """
     calls = trace.get("tool_calls", [])
     if not calls:
         return 0.0
-    seen = set()
+    allowance = trace.get("repeat_allowance") or {}
+    seen: dict[tuple, int] = {}
     redundant = 0
     for call in calls:
         key = (call.get("tool"), json.dumps(call.get("args") or {}, sort_keys=True, ensure_ascii=False))
-        if key in seen:
+        previous = seen.get(key, 0)
+        seen[key] = previous + 1
+        if previous > allowance.get(call.get("tool"), 0):
             redundant += 1
-        seen.add(key)
     return redundant / len(calls)
 
 
