@@ -16,6 +16,8 @@ TYPE_WORDS = {
     "perf": ("压测", "加压", "性能", "qps"),
     "diff": ("diff", "比对", "一致性", "结果对比"),
 }
+TYPE_OPTIONS = ["压测", "diff", "两个都跑"]
+TYPE_BY_CHOICE = {"压测": "perf", "diff": "diff", "两个都跑": "both"}
 
 
 @dataclass
@@ -62,6 +64,15 @@ def match_types(text: str) -> str | None:
     if has_diff:
         return "diff"
     return None
+
+
+def match_types_or_choice(text: str) -> str | None:
+    """先按关键词认类型，再按确认卡选项（含序号）兜底。"""
+    matched = match_types(text)
+    if matched:
+        return matched
+    choice = resolve_choice(text, TYPE_OPTIONS)
+    return TYPE_BY_CHOICE.get(choice or "")
 
 
 def match_task(text: str, known: list[str]) -> str | None:

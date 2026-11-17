@@ -23,9 +23,10 @@ from tools.r2_mock import R2Mock
 DEFAULT_QPS = [1200, 1600]
 
 
-def parse(text: str) -> dict:
-    scene = clarify.match_scene(text, [])
-    qps = [int(x) for x in re.findall(r"(\d{3,4})\s*(?:qps|档)", text)] or DEFAULT_QPS
+def parse(text: str, known: list[str] | None = None) -> dict:
+    scene = clarify.match_scene(text, known or [])
+    found_qps = [int(x) for x in re.findall(r"(\d{3,4})\s*(?:qps|档)", text)]
+    qps = found_qps or DEFAULT_QPS
     types = clarify.match_types(text)
 
     perf = types in ("perf", "both")
@@ -34,7 +35,8 @@ def parse(text: str) -> dict:
         perf = diff = True
 
     return {"scene": scene, "qps": sorted(set(qps)), "perf": perf, "diff": diff,
-            "types_explicit": types is not None}
+            "types": types, "types_explicit": types is not None,
+            "qps_explicit": bool(found_qps)}
 
 
 def _confirm(parsed: dict) -> dict:
@@ -71,10 +73,7 @@ def run(conn, text: str, session: dict | None = None) -> dict:
                 p.slots["types"] = t
 
         elif p.awaiting == "types":
-            t = clarify.match_types(text)
-            if t is None:
-                choice = clarify.resolve_choice(text, ["压测", "diff", "两个都跑"])
-                t = {"压测": "perf", "diff": "diff", "两个都跑": "both"}.get(choice or "")
+            t = clarify.match_types_or_choice(text)
             if t is None:
                 return {"reply": "没听懂。", "card": clarify.ask_types()}
             p.slots["types"] = t
@@ -109,25 +108,9 @@ def _from_slots(slots: dict) -> dict:
             "types_explicit": True}
 
 
-def _normalize(parsed: dict) -> dict:
-    out = {"scene": parsed.get("scene"), "qps": parsed.get("qps") or DEFAULT_QPS,
-           "perf": True, "diff": True, "types_explicit": True}
-    t = parsed.get("types")
-    if t == "perf":
-        out["perf"], out["diff"] = True, False
-    elif t == "diff":
-        out["perf"], out["diff"] = False, True
-    return out
-
-
 def _plan_of(parsed: dict) -> dict:
     return {"scene": parsed.get("scene"), "qps": parsed.get("qps") or DEFAULT_QPS,
             "perf": parsed.get("perf", True), "diff": parsed.get("diff", True)}
-
-
-def _scenes(conn) -> list[dict]:
-    from context import graph_scene
-    return [{"id": r["id"]} for r in repo._rows(conn.execute("SELECT id FROM scene ORDER BY id"))]
 
 
 # ---------- 执行 ----------

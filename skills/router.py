@@ -9,10 +9,14 @@
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import re
 
 from skills import clarify, diagnose, run, run_graph, scene_report, selftest
 from store import repo
+
+logger = logging.getLogger(__name__)
 
 SCENE_RE = re.compile(r"\d{8}-\d{4}")
 TASK_RE = re.compile(r"T-\d{3,}", re.I)
@@ -88,7 +92,12 @@ def route(conn, text: str, session: dict | None = None,
 
     # LangGraph 版本可用时，run 链路交给图处理（状态在 checkpointer 里）
     if run_graph.available():
-        waiting = run_graph.pending(conn, tid)
+        try:
+            waiting = run_graph.pending(conn, tid)
+        except Exception as exc:                 # 读状态失败也别把用户挡在门外
+            logger.warning("图版本读取状态失败，回落到手写链路：%s", exc)
+            waiting = False
+
         strong = _strong_intent(text)
 
         # 用户改口：明确说了别的意图 → 放弃上一轮，走新意图
@@ -97,9 +106,16 @@ def route(conn, text: str, session: dict | None = None,
             waiting = False
 
         if waiting or (not session.get("pending") and detect(text) == "run"):
-            r = run_graph.handle(conn, text, tid)
-            r["intent"] = "run"
-            return r
+            try:
+                r = run_graph.handle(conn, text, tid)
+                r["intent"] = "run"
+                return r
+            except Exception as exc:
+                # 降级而不是冒泡：手写 run.run 只产出确认卡、不执行，
+                # 所以回落不会造成重复跑任务
+                logger.warning("图版本执行失败，回落到手写链路：%s", exc)
+                with contextlib.suppress(Exception):
+                    run_graph.reset(conn, tid)
 
     # 有未完成的多轮提问 → 按 pending 的意图续跑
     if session.get("pending"):

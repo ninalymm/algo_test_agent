@@ -23,6 +23,8 @@
 
 **可选路径**：`run` 链路有手写版（`skills/run.py`）和 LangGraph 版（`skills/run_graph.py`），
 装没装 langgraph 自动切换，执行逻辑（`run.execute`）只有一份。见 D12。
+图版本每次调用独立构图、独立 checkpoint 连接（用完即关），状态按 `thread_id` 落 `data/graph.db`；
+场景槽位每轮现查，新增场景无需重启；图版本抛错时 `router` 会降级回手写链路。
 
 **依赖方向**：`skills → context → store`，`agent → tools`。
 **硬约束**：Skill 不允许直接查库，必须走 `context/assembler`——否则三个 Skill 会各写一套聚合逻辑，口径必然分叉。

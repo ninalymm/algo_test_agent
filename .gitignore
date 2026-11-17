@@ -9,3 +9,5 @@ venv/
 report/
 data/agent.db
 data/graph.db
+data/*.db-shm
+data/*.db-wal
