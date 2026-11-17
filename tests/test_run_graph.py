@@ -59,7 +59,7 @@ class TestRunGraph(unittest.TestCase):
         self.assertEqual(r["card"]["type"], "confirm")
 
     def test_new_scene_is_recognized_without_restart(self):
-        """场景列表每轮现查，不再在图构建时固化。"""
+        """场景列表每轮现查。"""
         new_scene = "20260401-0001"
         self.conn.execute(
             "INSERT INTO scene(id, app_id, name, entry_config, traffic_share) VALUES (?,?,?,?,?)",
@@ -81,7 +81,7 @@ class TestRunGraph(unittest.TestCase):
         self.conn.commit()
 
     def test_type_can_be_answered_by_ordinal(self):
-        """确认卡上的选项支持回序号，与手写版行为一致。"""
+        """确认卡选项支持回序号。"""
         tid = "g-test-4"
         run_graph.reset(self.conn, tid)
         run_graph.handle(self.conn, "帮我跑一下", tid)
@@ -93,7 +93,7 @@ class TestRunGraph(unittest.TestCase):
 
 
 class TestRouterFallback(unittest.TestCase):
-    """图版本抛错时要降级到手写链路，而不是把异常丢给用户。"""
+    """图版本抛错时降级到手写链路。"""
 
     @classmethod
     def setUpClass(cls):

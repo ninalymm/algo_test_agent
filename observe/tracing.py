@@ -4,12 +4,6 @@
     2. 显式打开 LANGSMITH_ENABLED=true
 
 只设 key 不会启用 —— 避免「拿了 key 就自动上传」这种意外。
-
-边界处理（详见各函数）：
-- .env 解析支持 export 前缀 / 引号 / 行尾注释；空环境变量视为未设置
-- 开关在每次调用时求值，import 之后再打开也能生效
-- 进程退出前自动 flush，避免后台队列里的尾部数据丢失
-- usage_metadata() 把各家 API 的 token 用量归一化成 langsmith 认识的形式
 """
 
 from __future__ import annotations
@@ -52,9 +46,8 @@ def _parse_env_line(line: str) -> tuple[str, str] | None:
 def load_env(path: Path | None = None, *, force: bool = False) -> None:
     """极简 .env 解析（不引第三方依赖）。
 
-    - 真实环境变量优先：当前值缺失或为空串时才写入（空串视为未设置，
-      否则 `LANGSMITH_ENABLED= python3 ...` 会把 .env 里的配置挡掉）
-    - 默认只加载一次；显式传 path 或 force=True 可重复加载（测试、多环境）
+    真实环境变量优先，只填空缺或空串；默认只加载一次，
+    显式传 path 或 force=True 可重复加载。
     """
     global _ENV_LOADED
     if _ENV_LOADED and path is None and not force:
@@ -107,11 +100,7 @@ def setup() -> dict:
 
 
 def flush() -> None:
-    """把后台队列里没发出去的 run 发完。
-
-    SDK 默认用后台线程攒批上报，进程正常退出或收到 SIGTERM 时尾部数据
-    可能滞留；CLI/短命脚本结束前显式调一次更稳（服务端由 setup() 注册 atexit）。
-    """
+    """把后台队列里没发出去的 run 发完（短命脚本结束前调用）。"""
     if not enabled():
         return
     try:
@@ -137,18 +126,14 @@ _CACHE_WRITE_KEYS = ("cache_creation_input_tokens",)
 def usage_metadata(usage: dict | None) -> dict:
     """把各家 API 的 usage 归一化成 langsmith 认识的 usage_metadata。
 
-    langsmith 只统计 input/output/total 三项；缓存命中、缓存写入、推理 token
-    单价不同，一并附上便于成本回溯（UI 不展示，但会随 run 存下来）。
+    只统计 input/output/total；缓存命中、缓存写入、推理 token 单价不同，
+    一并附上便于成本回溯。流式响应没带 usage 时返回空 dict。
 
-    用法：
         @traceable(run_type="llm")
         def chat(prompt: str) -> dict:
             resp = call_llm(prompt)
             return {"content": resp["content"],
                     "usage_metadata": usage_metadata(resp.get("usage"))}
-
-    注意：流式响应默认不带 usage（OpenAI 需 stream_options.include_usage），
-    拿不到时返回空 dict，不会凭空估算。
     """
     if not usage:
         return {}
@@ -212,8 +197,7 @@ def _build_traced(func, run_type: str, name: str | None):
 def traceable(fn=None, *, run_type: str = "chain", name: str | None = None):
     """LangSmith 装饰器；未启用时就是原函数的一层薄包装。
 
-    开关在**每次调用时**求值——import 之后再打开 LANGSMITH_ENABLED 也能生效
-    （旧实现把判断冻结在装饰那一刻，运行中改环境变量无效）。
+    开关在每次调用时求值，运行中打开 LANGSMITH_ENABLED 也能生效。
 
         @traceable                  # 业务函数 → run_type="chain"
         @traceable(run_type="llm")  # LLM 调用 → UI 上显示为 LLM 节点

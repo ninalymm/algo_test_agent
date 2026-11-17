@@ -1,10 +1,6 @@
 """用 LangGraph 重写「自然语言驱动执行」这一条链路。
 
-对比手写版本（skills/run.py）：
-    手写：SESSIONS 字典 + Pending 结构 + 自己判「是不是在回答」
-    图版：checkpointer 存状态 + interrupt 停在确认卡 + 条件边决定下一步
-
-设计原则不变（D1）：意图与槽位仍用规则抽取，模型不参与决策。
+状态存 checkpointer，确认卡用 interrupt 表达；意图与槽位仍用规则抽取（D1）。
 """
 
 from __future__ import annotations
@@ -55,7 +51,6 @@ def build(conn):
     from langgraph.types import interrupt
 
     def known_scenes() -> list[str]:
-        """每轮现查，新增场景不需要重启进程。"""
         return [r["id"] for r in repo._rows(
             conn.execute("SELECT id FROM scene ORDER BY id"))]
 
@@ -66,7 +61,7 @@ def build(conn):
         types_explicit = parsed["types_explicit"]
         if types is None and s.get("awaiting") == "types":
             types = clarify.match_types_or_choice(text)
-            types_explicit = types is not None     # 用户是明确回答的
+            types_explicit = types is not None
         return {
             "scene": parsed["scene"] or s.get("scene"),
             "types": types or s.get("types"),
@@ -137,11 +132,7 @@ def _to_parsed(s: RunState) -> dict:
 
 @contextlib.contextmanager
 def _open(conn):
-    """每次调用独立构图 + 独立 checkpoint 连接，用完即关。
-
-    早期实现是模块级单例：图绑死第一次传入的 conn，checkpoint 连接也从不关闭。
-    现在按调用构建，避免跨连接串味和连接泄漏（SQLite 句柄 + WAL 文件）。
-    """
+    """每次调用独立构图与 checkpoint 连接，用完即关。"""
     graph, saver = build(conn)
     try:
         yield graph
@@ -201,7 +192,6 @@ def _resume(value: str):
 
 
 def _shape(g, cfg, out: dict) -> dict:
-    # 用公开 API（StateSnapshot.interrupts）判断挂起，不再依赖输出里的私有键 __interrupt__
     snap = g.get_state(cfg)
     if snap.interrupts:
         payload = getattr(snap.interrupts[0], "value", None) or {}

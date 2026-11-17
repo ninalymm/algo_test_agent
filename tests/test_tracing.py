@@ -54,7 +54,7 @@ class TestSwitch(unittest.TestCase):
             self.assertEqual(wrapped.__name__, "fn")
 
     def test_switch_is_evaluated_at_call_time(self):
-        """装饰时关闭、之后打开也能生效（旧实现会冻结在 import 那一刻）。"""
+        """装饰后再打开开关也生效。"""
         def fn(x):
             return x * 2
 

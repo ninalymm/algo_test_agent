@@ -94,7 +94,7 @@ def route(conn, text: str, session: dict | None = None,
     if run_graph.available():
         try:
             waiting = run_graph.pending(conn, tid)
-        except Exception as exc:                 # 读状态失败也别把用户挡在门外
+        except Exception as exc:
             logger.warning("图版本读取状态失败，回落到手写链路：%s", exc)
             waiting = False
 
@@ -111,8 +111,7 @@ def route(conn, text: str, session: dict | None = None,
                 r["intent"] = "run"
                 return r
             except Exception as exc:
-                # 降级而不是冒泡：手写 run.run 只产出确认卡、不执行，
-                # 所以回落不会造成重复跑任务
+                # run.run 只出确认卡、不执行，回落不会重复跑任务
                 logger.warning("图版本执行失败，回落到手写链路：%s", exc)
                 with contextlib.suppress(Exception):
                     run_graph.reset(conn, tid)
