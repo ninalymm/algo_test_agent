@@ -217,6 +217,13 @@ def traceable(fn=None, *, run_type: str = "chain", name: str | None = None,
 
         def resolve():
             if state["impl"] is None:
+                # langsmith SDK 另有自己的开关 LANGSMITH_TRACING；只有 setup() 会设它，
+                # 而 CLI 入口（如 agent/main.py）从不调 setup()，会导致「开关全开但没有
+                # trace、且不报错」的静默失效。enabled() 已判定 key+开关都满足，
+                # 这里补齐 SDK 需要的环境变量，让 web / CLI / 脚本三条路径行为一致。
+                os.environ.setdefault("LANGSMITH_TRACING", "true")
+                os.environ.setdefault("LANGSMITH_PROJECT",
+                                      os.getenv("LANGSMITH_PROJECT", "algo-test-agent"))
                 extra = {"metadata": metadata} if metadata else {}
                 state["impl"] = _build_traced(func, run_type, name, **extra) or func
                 _ensure_flush_on_exit()

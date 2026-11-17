@@ -87,3 +87,33 @@ class TestMetadataForwarding(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSdkFlagBackfill(unittest.TestCase):
+    """回归 BUG：只设 ENABLED 时 langsmith SDK 的 LANGSMITH_TRACING 仍为空，
+    装饰器静默不产生 run（CLI 入口不调 setup() 时会踩到）。"""
+
+    def test_resolve_backfills_sdk_tracing_flag(self):
+        def fake_build(func, run_type, name):
+            return func
+
+        @tracing.traceable
+        def f():
+            return 1
+
+        env = {"LANGSMITH_API_KEY": "k", "LANGSMITH_ENABLED": "true"}
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("LANGSMITH_TRACING", None)   # 模拟 CLI 场景：没人调 setup()
+            with patch.object(tracing, "_build_traced", side_effect=fake_build):
+                self.assertEqual(f(), 1)
+            self.assertEqual(os.environ.get("LANGSMITH_TRACING"), "true")
+
+    def test_disabled_does_not_backfill(self):
+        @tracing.traceable
+        def f():
+            return 1
+
+        with patch.dict(os.environ, {"LANGSMITH_ENABLED": "false"}, clear=False):
+            os.environ.pop("LANGSMITH_TRACING", None)
+            f()
+            self.assertIsNone(os.environ.get("LANGSMITH_TRACING"))
