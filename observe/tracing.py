@@ -180,8 +180,13 @@ def usage_metadata(usage: dict | None) -> dict:
     return meta
 
 
-def _build_traced(func, run_type: str, name: str | None):
-    """构造真正的 langsmith 包装；失败则降级为原函数并告警一次。"""
+def _build_traced(func, run_type: str, name: str | None,
+                  metadata: dict | None = None):
+    """构造真正的 langsmith 包装；失败则降级为原函数并告警一次。
+
+    metadata 会挂到每一次 run 上，用来记录「模型名 / prompt 版本 / 实验标签」这类
+    不参与业务逻辑、但排查和成本回溯需要的字段。
+    """
     try:
         from langsmith import traceable as ls_traceable
     except Exception as exc:  # langsmith 是可选依赖
@@ -191,16 +196,20 @@ def _build_traced(func, run_type: str, name: str | None):
     kwargs = {"run_type": run_type}
     if name:
         kwargs["name"] = name
+    if metadata:
+        kwargs["metadata"] = dict(metadata)
     return ls_traceable(func, **kwargs)
 
 
-def traceable(fn=None, *, run_type: str = "chain", name: str | None = None):
+def traceable(fn=None, *, run_type: str = "chain", name: str | None = None,
+              metadata: dict | None = None):
     """LangSmith 装饰器；未启用时就是原函数的一层薄包装。
 
     开关在每次调用时求值，运行中打开 LANGSMITH_ENABLED 也能生效。
 
-        @traceable                  # 业务函数 → run_type="chain"
-        @traceable(run_type="llm")  # LLM 调用 → UI 上显示为 LLM 节点
+        @traceable                                    # 业务函数 → chain
+        @traceable(run_type="llm")                    # LLM 调用 → UI 显示为 llm
+        @traceable(run_type="llm", metadata={"model": "deepseek"})  # 附带自定义字段
     """
 
     def decorate(func):
@@ -208,7 +217,8 @@ def traceable(fn=None, *, run_type: str = "chain", name: str | None = None):
 
         def resolve():
             if state["impl"] is None:
-                state["impl"] = _build_traced(func, run_type, name) or func
+                extra = {"metadata": metadata} if metadata else {}
+                state["impl"] = _build_traced(func, run_type, name, **extra) or func
                 _ensure_flush_on_exit()
             return state["impl"]
 
