@@ -149,9 +149,17 @@ def _reset(g, thread_id: str) -> None:
     g.update_state(_cfg(thread_id), dict(_EMPTY_STATE))
 
 
+def _clear_thread(g, thread_id: str) -> None:
+    delete = getattr(getattr(g, "checkpointer", None), "delete_thread", None)
+    if delete is not None:
+        delete(thread_id)
+    _reset(g, thread_id)
+
+
 def reset(conn, thread_id: str) -> None:
+    """清空会话：删掉历史 checkpoint 后写回空状态。"""
     with _open(conn) as g:
-        _reset(g, thread_id)
+        _clear_thread(g, thread_id)
 
 
 def pending(conn, thread_id: str) -> bool:
@@ -171,7 +179,7 @@ def handle(conn, text: str, thread_id: str = "default") -> dict:
         if clarify.is_cancel(text):
             if g.get_state(cfg).interrupts:
                 g.invoke(_resume("取消"), cfg)
-            _reset(g, thread_id)
+            _clear_thread(g, thread_id)
             return {"reply": "已取消。", "card": None, "job": None, "trace_id": None}
 
         if g.get_state(cfg).interrupts:        # 正停在确认卡

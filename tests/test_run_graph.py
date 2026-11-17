@@ -91,6 +91,22 @@ class TestRunGraph(unittest.TestCase):
         self.assertTrue(any("diff" in line for line in r["card"]["lines"]))
         self.assertFalse(any("未指定类型" in line for line in r["card"]["lines"]))
 
+    def test_reset_clears_checkpoint_history(self):
+        """reset 要删历史，否则 data/graph.db 只增不减。"""
+        tid = "g-test-5"
+        run_graph.reset(self.conn, tid)
+        run_graph.handle(self.conn, "帮我跑一下", tid)
+        run_graph.handle(self.conn, "20260301-0001", tid)
+
+        with run_graph._open(self.conn) as g:
+            self.assertGreater(len(list(g.get_state_history(run_graph._cfg(tid)))), 1)
+
+        run_graph.reset(self.conn, tid)
+
+        with run_graph._open(self.conn) as g:
+            self.assertEqual(len(list(g.get_state_history(run_graph._cfg(tid)))), 1)
+        self.assertFalse(run_graph.pending(self.conn, tid))
+
 
 class TestRouterFallback(unittest.TestCase):
     """图版本抛错时降级到手写链路。"""
